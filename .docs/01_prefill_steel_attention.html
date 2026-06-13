@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Prefill 동작 분석 — steel_attention (FlashAttention) 커널</title>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    if (typeof hljs !== "undefined") hljs.highlightAll();
+    if (typeof mermaid !== "undefined") {
+      mermaid.initialize({
+        startOnLoad: true, theme: "dark", securityLevel: "loose",
+        themeVariables: {
+          background: "#0f1115", primaryColor: "#1c2030", primaryTextColor: "#e6e8ee",
+          primaryBorderColor: "#2a2f3f", lineColor: "#7dd3fc", secondaryColor: "#161922",
+          tertiaryColor: "#111827", noteBkgColor: "#161922", noteTextColor: "#e6e8ee",
+          noteBorderColor: "#fbbf24"
+        }
+      });
+    }
+  });
+</script>
+<style>
+  :root {
+    --bg: #0f1115; --bg-soft: #161922; --bg-card: #1c2030; --border: #2a2f3f;
+    --text: #e6e8ee; --text-dim: #9aa3b2; --accent: #7dd3fc; --accent-warm: #fbbf24;
+    --good: #34d399; --bad: #f87171; --purple: #a78bfa;
+    --blue-soft: rgba(125, 211, 252, 0.12); --green-soft: rgba(52, 211, 153, 0.12);
+    --yellow-soft: rgba(251, 191, 36, 0.12); --red-soft: rgba(248, 113, 113, 0.12);
+    --purple-soft: rgba(167, 139, 250, 0.14);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "SF Pro Text", "Noto Sans KR", sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.7; }
+  .container { max-width: 1240px; margin: 0 auto; padding: 56px 28px 120px; }
+  h1 { font-size: 31px; margin: 0 0 6px; letter-spacing: -0.4px; }
+  h2 { font-size: 22px; margin: 52px 0 16px; padding-top: 18px; border-top: 1px solid var(--border); letter-spacing: -0.2px; }
+  h3 { font-size: 18px; margin: 28px 0 12px; color: var(--accent); }
+  h4 { font-size: 14px; margin: 18px 0 8px; color: var(--accent-warm); text-transform: uppercase; letter-spacing: 0.5px; }
+  p { margin: 12px 0; }
+  .subtitle { color: var(--text-dim); margin: 0 0 30px; font-size: 14px; }
+  code, .mono { font-family: "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13px;
+    background: var(--bg-soft); padding: 2px 6px; border-radius: 4px; color: var(--accent); }
+  pre { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 1.55; }
+  pre code { background: transparent; padding: 0; color: var(--text); }
+  pre code.hljs { background: var(--bg-soft) !important; padding: 0 !important; }
+  .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; margin: 18px 0; }
+  .callout { border-left: 4px solid var(--accent); background: var(--blue-soft); padding: 14px 18px; border-radius: 6px; margin: 18px 0; }
+  .callout-warn { border-left-color: var(--accent-warm); background: var(--yellow-soft); }
+  .callout-bad  { border-left-color: var(--bad); background: var(--red-soft); }
+  .callout-good { border-left-color: var(--good); background: var(--green-soft); }
+  .callout-purple { border-left-color: var(--purple); background: var(--purple-soft); }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 12.5px; }
+  th, td { border: 1px solid var(--border); padding: 8px 11px; text-align: left; vertical-align: top; }
+  th { background: var(--bg-soft); color: var(--accent); font-weight: 600; }
+  ul, ol { padding-left: 22px; } li { margin: 5px 0; }
+  .mermaid { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin: 18px 0; text-align: center; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 18px 0; }
+  .grid-2 .card { margin: 0; }
+  .label { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+  .label-good { background: var(--green-soft); color: var(--good); }
+  .label-bad  { background: var(--red-soft); color: var(--bad); }
+  .label-warn { background: var(--yellow-soft); color: var(--accent-warm); }
+  .label-info { background: var(--blue-soft); color: var(--accent); }
+  .toc { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 10px; padding: 16px 22px; }
+  .toc ol { margin: 6px 0 0 0; } .toc a { color: var(--accent); text-decoration: none; } .toc a:hover { text-decoration: underline; }
+  .file-ref { display: inline-block; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 4px; padding: 1px 7px; font-family: "SF Mono", Menlo, monospace; font-size: 12px; color: var(--accent-warm); }
+  .analogy { background: linear-gradient(135deg, var(--bg-card), var(--bg-soft)); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; margin: 18px 0; }
+  .analogy h4 { color: var(--purple); margin-top: 0; }
+  .step-box { border: 1px solid var(--border); background: var(--bg-soft); border-radius: 8px; padding: 12px 16px; margin: 10px 0; display: flex; align-items: flex-start; gap: 14px; }
+  .step-num { flex: 0 0 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #0f1115; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .step-body { flex: 1; } .step-body strong { color: var(--accent-warm); }
+  .ascii-art { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; padding: 18px; font-family: "SF Mono", Menlo, monospace; font-size: 12.5px; line-height: 1.5; white-space: pre; color: var(--text); overflow-x: auto; }
+
+  /* memory pyramid */
+  .pyramid { display: flex; flex-direction: column; align-items: center; margin: 20px 0; padding: 16px 0; background: var(--bg-soft); border-radius: 10px; border: 1px solid var(--border); position: relative; }
+  .pyramid-row { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; padding: 2px 0; }
+  .pyramid-level { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 10px 16px; text-align: center; font-size: 12.5px; box-shadow: 0 2px 4px rgba(0,0,0,0.25); }
+  .pyramid-row.l1 .pyramid-level { width: 20%; border-color: var(--good); background: rgba(52,211,153,0.08); }
+  .pyramid-row.l2 .pyramid-level { width: 34%; border-color: var(--accent-warm); background: rgba(251,191,36,0.08); }
+  .pyramid-row.l3 .pyramid-level { width: 56%; border-color: var(--accent); background: rgba(125,211,252,0.06); }
+  .pyramid-row.l4 .pyramid-level { width: 82%; border-color: var(--bad); background: rgba(248,113,113,0.06); }
+  .pyramid-level strong { display: block; font-size: 13px; margin-bottom: 2px; }
+  .pyramid-level small { color: var(--text-dim); font-size: 11px; }
+  .pyramid-axis { position: absolute; top: 50%; transform: translateY(-50%); font-size: 10px; color: var(--text-dim); writing-mode: vertical-rl; text-orientation: mixed; letter-spacing: 1px; }
+  .pyramid-axis.left { left: 12px; } .pyramid-axis.right { right: 12px; transform: translateY(-50%) rotate(180deg); }
+
+  /* thread hierarchy */
+  .hierarchy { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin: 18px 0; }
+  .hier-grid { border: 2px solid var(--purple); border-radius: 10px; padding: 16px 14px 14px; background: rgba(167,139,250,0.04); position: relative; }
+  .hier-label { position: absolute; top: -10px; left: 12px; background: var(--bg-soft); padding: 0 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; }
+  .hier-grid > .hier-label { color: var(--purple); }
+  .hier-tgs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 6px; }
+  .hier-tg { border: 2px solid var(--accent); border-radius: 8px; padding: 12px 10px 10px; background: rgba(125,211,252,0.04); text-align: center; font-size: 11px; position: relative; }
+  .hier-tg.expanded { background: rgba(125,211,252,0.10); box-shadow: 0 0 16px rgba(125,211,252,0.25); grid-column: span 4; }
+  .hier-tg-title { font-weight: 700; color: var(--accent); margin-bottom: 6px; font-size: 12px; }
+  .hier-sgs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
+  .hier-sg { border: 2px solid var(--accent-warm); border-radius: 4px; padding: 8px 4px; background: rgba(251,191,36,0.05); font-size: 10px; text-align: center; }
+  .hier-sg-title { color: var(--accent-warm); font-weight: 700; font-size: 10.5px; }
+  .hier-note { margin-top: 10px; font-size: 11px; color: var(--text-dim); text-align: center; font-style: italic; }
+
+  /* tile matrices */
+  .matwrap { display: flex; gap: 22px; flex-wrap: wrap; justify-content: center; align-items: flex-start; margin: 14px 0; }
+  .matbox { text-align: center; }
+  .mattitle { font-size: 12px; color: var(--accent-warm); margin-bottom: 8px; font-family: "SF Mono", Menlo, monospace; }
+  .tmat { border-collapse: collapse; margin: 0 auto; font-family: "SF Mono", Menlo, monospace; font-size: 10px; }
+  .tmat td { width: 26px; height: 26px; text-align: center; border: 1px solid var(--border); color: var(--text-dim); }
+  .t-q { background: rgba(125,211,252,0.16); color: var(--accent); }
+  .t-k { background: rgba(167,139,250,0.16); color: var(--purple); }
+  .t-v { background: rgba(52,211,153,0.14); color: var(--good); }
+  .t-act { background: rgba(251,191,36,0.30); outline: 2px solid var(--accent-warm); color: var(--accent-warm); font-weight: 700; }
+  .t-msk { background: rgba(248,113,113,0.14); color: var(--bad); }
+  .t-pad { background: repeating-linear-gradient(45deg, var(--bg-soft), var(--bg-soft) 4px, var(--bg-card) 4px, var(--bg-card) 8px); color: var(--text-dim); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; font-size: 11px; color: var(--text-dim); margin: 6px 0 0; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--border); display: inline-block; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Prefill 동작 분석 — <code>steel_attention</code> (FlashAttention) 커널</h1>
+<p class="subtitle">사용자가 Llama 3 8B 에 질문을 던진 순간, 프롬프트 전체가 GPU 에서 어떻게 attention 으로 계산되는가 — Grid / Threadgroup / SIMD group / lane 분할과 타일링을 시나리오로 따라가기.</p>
+
+<div class="toc">
+  <strong>목차</strong>
+  <ol>
+    <li><a href="#scenario">시나리오 설정 — Llama 3 8B 에 질문하기</a></li>
+    <li><a href="#why">왜 prefill 은 steel_attention(GEMM) 인가? — decode 와의 차이</a></li>
+    <li><a href="#dispatch">C++ 디스패처 — full 경로 라우팅과 grid/threadgroup 결정</a></li>
+    <li><a href="#hierarchy">스레드 계층 시각화 — Grid → Threadgroup → SIMD → lane</a></li>
+    <li><a href="#tiling">타일링 — Q·K·V tile 과 메모리 피라미드</a></li>
+    <li><a href="#mma">MMA — 8×8 simdgroup_matrix 와 lane 매핑</a></li>
+    <li><a href="#layout">메모리 레이아웃 &amp; 포인터 오프셋 — 내 블록의 주소 계산하기</a></li>
+    <li><a href="#flow">커널 흐름 단계별 따라가기 (시나리오)</a></li>
+    <li><a href="#matrix">타일링 매트릭스로 보는 Q@Kᵀ → softmax → @V</a></li>
+    <li><a href="#online">online softmax — 왜 한 번에 안 하고 블록마다 갱신하나</a></li>
+    <li><a href="#summary">요약</a></li>
+  </ol>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="scenario">1. 시나리오 설정 — Llama 3 8B 에 질문하기</h2>
+
+<p>사용자가 채팅창에 이렇게 입력했다고 하자:</p>
+
+<div class="card">
+  <p style="margin:0;font-size:15px;">💬 <strong>"대한민국의 수도와 그 도시의 대표적인 특징을 자세히 설명해줘"</strong></p>
+  <p style="margin:8px 0 0;color:var(--text-dim);font-size:13px;">→ 토크나이저가 <strong>40개 토큰</strong>으로 변환했다고 가정 (prompt length = 40).</p>
+</div>
+
+<h3>모델 설정 — Llama 3 8B</h3>
+<table>
+<tr><th>파라미터</th><th>값</th><th>코드에서</th></tr>
+<tr><td>Batch (B)</td><td>1</td><td><code>q.shape(0)</code></td></tr>
+<tr><td>Query heads (H<sub>q</sub>)</td><td>32</td><td><code>q.shape(1)</code></td></tr>
+<tr><td>KV heads (H<sub>kv</sub>)</td><td>8 (GQA)</td><td><code>k.shape(1)</code></td></tr>
+<tr><td>GQA factor</td><td>32 / 8 = <strong>4</strong></td><td><code>gqa_factor</code></td></tr>
+<tr><td>Head dim (D)</td><td><strong>128</strong></td><td><code>q.shape(3)</code></td></tr>
+<tr><td>Query seq (qL)</td><td><strong>40</strong> (프롬프트 전체)</td><td><code>q.shape(2)</code></td></tr>
+<tr><td>Key seq (kL)</td><td><strong>40</strong></td><td><code>k.shape(2)</code></td></tr>
+</table>
+
+<div class="callout">
+<strong>Prefill 이란?</strong> 모델이 답을 생성하기 <em>전</em>, 입력 프롬프트 40개 토큰을 <strong>한 번에</strong> 통과시켜 각 토큰의 표현과 KV 캐시를 채우는 단계. 쿼리가 40개(=긴 시퀀스)이므로 attention 은 <strong>40×40 행렬 곱</strong>이 된다 → 이건 GEMM(행렬×행렬). 그래서 GEMM 에 최적화된 <code>steel_attention</code> 커널이 쓰인다.</p>
+<p style="margin-bottom:0;">반대로 답변 생성(decode)은 매 스텝 쿼리가 <strong>1개</strong>뿐 → GEMV(행렬×벡터). 그건 <a href="02_decode_sdpa_vector.html">2번 문서(sdpa_vector)</a>에서 다룬다.</p>
+</div>
+
+<div class="callout-purple">
+<strong>"Q, K, V 를 128~512 dim 으로" 에 대해:</strong> 여기서 dim 은 <strong>head dim(D)</strong> 을 말한다. Llama 3 는 D=128. full(steel) 커널이 사전 instantiate 한 head dim 은 <code>{64, 80, 128}</code> 뿐이다(<span class="file-ref">scaled_dot_product_attention.cpp:626</span>). D=256·512 라면 full 커널은 <strong>fallback</strong>(일반 matmul+softmax 분해)으로 빠지고, decode 의 vector 커널은 <code>{64,96,128,256}</code> 까지 지원한다. 이 문서는 가장 일반적인 <strong>D=128</strong> 로 따라간다.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="why">2. 왜 prefill 은 steel_attention(GEMM) 인가?</h2>
+
+<p>Attention 의 핵심 수식은 단 한 줄이다:</p>
+<pre><code class="language-python">O = softmax( (Q @ K.T) * scale ) @ V</code></pre>
+
+<p>이때 <strong>Q 의 행 개수(=쿼리 토큰 수)</strong>가 모든 걸 가른다:</p>
+
+<div class="grid-2">
+<div class="card">
+<h4 style="color:var(--accent);">Prefill — Q 가 40행 (이 문서)</h4>
+<ul>
+<li><code>Q[40,128] @ Kᵀ[128,40] = S[40,40]</code></li>
+<li>행렬 × 행렬 → <strong>GEMM</strong></li>
+<li>연산량이 많아 <strong>compute-bound</strong></li>
+<li>→ GPU 행렬곱 하드웨어(<strong>simdgroup_matrix / MMA</strong>)를 써야 빠름</li>
+<li>→ <code>steel_attention</code> (FlashAttention 스타일)</li>
+</ul>
+</div>
+<div class="card">
+<h4 style="color:var(--purple);">Decode — Q 가 1행</h4>
+<ul>
+<li><code>Q[1,128] @ Kᵀ[128,N] = S[1,N]</code></li>
+<li>벡터 × 행렬 → <strong>GEMV</strong></li>
+<li>KV 캐시를 한 번씩만 읽음 → <strong>memory-bound</strong></li>
+<li>MMA 써봐야 행이 1개라 낭비</li>
+<li>→ <code>sdpa_vector</code> (단순 dot product + simd_sum)</li>
+</ul>
+</div>
+</div>
+
+<div class="analogy">
+<h4>비유: 시험 채점</h4>
+<p><strong>Prefill</strong> = 40명의 학생 답안지(Q)를 40개 정답지(K)와 한꺼번에 대조 → 40×40 채점표를 만드는 일. 일이 많으니 채점 기계(MMA)를 돌린다.</p>
+<p style="margin-bottom:0;"><strong>Decode</strong> = 방금 도착한 학생 1명(Q 1행)을 기존 40개 정답지와 대조 → 줄 하나만 채점. 기계 돌릴 것 없이 손으로 빠르게.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="dispatch">3. C++ 디스패처 — full 경로 라우팅</h2>
+
+<p>커널이 GPU 에서 돌기 전에, CPU(host) 쪽 C++ 가 "어느 커널을, 몇 개 스레드로" 돌릴지 정한다. 진입점은 <span class="file-ref">ScaledDotProductAttention::eval_gpu</span>.</p>
+
+<h3>단계 1 — vector 냐 full 이냐</h3>
+<pre><code class="language-cpp">// scaled_dot_product_attention.cpp:686
+if (q_pre.shape(2) &lt;= 8) {
+  // ... 쿼리 8개 이하 → decode (sdpa_vector)
+} else {
+  // 쿼리 40개 → ✅ 여기! full attention 모드
+  sdpa_full_self_attention_metal(s, d, q, k, v, scale_, o, do_causal_, mask, sinks);
+}</code></pre>
+
+<p>우리 시나리오는 qL=40 &gt; 8 → <strong>full 경로</strong>. (그 전에 <code>use_fallback</code> 이 head dim ∈ {64,80,128} 인지도 확인 — 128 이므로 통과.)</p>
+
+<h3>단계 2 — 블록 크기 결정</h3>
+<p><span class="file-ref">scaled_dot_product_attention.cpp:194</span> 부근, full(metal) 경로:</p>
+<pre><code class="language-cpp">int wm = 4;                    // warp (SIMD group) 행 개수
+int wn = 1;                    // warp 열 개수  → 총 4 warp = 128 thread
+int bd = q.shape(-1);          // = 128  (head dim 타일 = 전체 D)
+int bq = 32;                   // Q 타일 = 32 토큰
+int bk = bd &lt; 128 ? 32 : 16;   // D=128 이므로 bk = 16  (K 타일 = 16 토큰)</code></pre>
+
+<table>
+<tr><th>기호</th><th>의미</th><th>우리 값</th></tr>
+<tr><td><code>BQ</code></td><td>한 threadgroup 이 맡는 Q 토큰 수(타일 높이)</td><td>32</td></tr>
+<tr><td><code>BK</code></td><td>K/V 를 한 번에 처리하는 토큰 수(타일 폭)</td><td>16</td></tr>
+<tr><td><code>BD</code></td><td>head dim 타일 (전체를 한 번에)</td><td>128</td></tr>
+<tr><td><code>WM × WN</code></td><td>threadgroup 당 SIMD group(warp) 수</td><td>4 × 1 = 4</td></tr>
+</table>
+
+<h3>단계 3 — Grid / Threadgroup 차원</h3>
+<pre><code class="language-cpp">// scaled_dot_product_attention.cpp:324
+int NQ = (qL + bq - 1) / bq;   // ceil(40/32) = 2  → Q 블록 2개
+int NK = (kL + bk - 1) / bk;   // ceil(40/16) = 3  → K 블록 3개 (루프 안에서)
+
+MTL::Size grid_dims  = MTL::Size(NQ, H, B);     // (2, 32, 1) = 64 threadgroup
+MTL::Size group_dims = MTL::Size(32, wm, wn);   // (32, 4, 1) = 128 thread
+compute_encoder.dispatch_threadgroups(grid_dims, group_dims);</code></pre>
+
+<div class="callout">
+<strong>읽는 법:</strong> grid 의 한 점 <code>(qb, h, b)</code> = "배치 b, 헤드 h 의 Q 블록 qb 를 책임지는 threadgroup 하나". 우리 경우 <strong>2(Q블록) × 32(헤드) × 1(배치) = 64개 threadgroup</strong> 이 동시에 뜬다. 각 threadgroup 안에는 <strong>128 thread (= 4 SIMD group × 32 lane)</strong>.
+</div>
+
+<div class="mermaid">
+flowchart TD
+    A["eval_gpu 진입<br/>q.shape=(1,32,40,128)"] --> B{"q_seq(40) &le; 8 ?"}
+    B -->|"아니오 (40&gt;8)"| C["full 경로<br/>sdpa_full_self_attention_metal"]
+    B -->|"예"| D["decode 경로<br/>sdpa_vector — 문서2"]
+    C --> E["bq=32, bk=16, bd=128<br/>NQ=2, NK=3"]
+    E --> F["grid=(2,32,1)=64 TG<br/>group=(32,4,1)=128 thread"]
+    F --> G["get_kernel:<br/>steel_attention_float16_bq32_bk16_bd128_wm4_wn1..."]
+    G --> H["dispatch_threadgroups"]
+    style C fill:#1c2030,stroke:#7dd3fc
+    style F fill:#1c2030,stroke:#34d399
+    style D fill:#1c2030,stroke:#a78bfa
+</div>
+
+<!-- ============================================================ -->
+<h2 id="hierarchy">4. 스레드 계층 시각화</h2>
+
+<p>GPU 스레드는 4단계로 중첩된다. 우리 시나리오 숫자로 채워보면:</p>
+
+<table>
+<tr><th>단계</th><th>개수</th><th>이 시나리오에서 맡는 일</th></tr>
+<tr><td><span class="label label-info">Grid</span></td><td>64 threadgroup</td><td>(Q블록 2) × (헤드 32) × (배치 1) 전부</td></tr>
+<tr><td><span class="label" style="background:var(--blue-soft);color:var(--accent);">Threadgroup</span></td><td>128 thread</td><td>한 헤드의 Q 블록 1개(쿼리 32개)의 attention 전부</td></tr>
+<tr><td><span class="label label-warn">SIMD group</span></td><td>4개 (warp)</td><td>MMA 행렬곱에서 Q 시퀀스 방향 분담</td></tr>
+<tr><td><span class="label label-good">lane</span></td><td>32개/warp</td><td>8×8 MMA fragment 의 원소들을 협력 보관·연산</td></tr>
+</table>
+
+<div class="hierarchy">
+  <div class="hier-grid">
+    <span class="hier-label">📦 GRID · 64 threadgroup = NQ(2) × H(32) × B(1)</span>
+    <div class="hier-tgs">
+      <div class="hier-tg"><div class="hier-tg-title">TG (0,0,0)</div><div style="font-size:10px;color:var(--text-dim);">head0 · Q블록0<br/>쿼리 0~31</div></div>
+      <div class="hier-tg"><div class="hier-tg-title">TG (1,0,0)</div><div style="font-size:10px;color:var(--text-dim);">head0 · Q블록1<br/>쿼리 32~39</div></div>
+      <div class="hier-tg"><div class="hier-tg-title">TG (0,1,0)</div><div style="font-size:10px;color:var(--text-dim);">head1 · Q블록0</div></div>
+      <div class="hier-tg"><div class="hier-tg-title">… TG (1,31,0)</div><div style="font-size:10px;color:var(--text-dim);">head31 · Q블록1</div></div>
+
+      <div class="hier-tg expanded">
+        <div class="hier-tg-title">🔍 Threadgroup (0,0,0) 확대 · head0 의 쿼리 0~31 담당 · 128 thread = 4 SIMD group × 32 lane</div>
+        <div class="hier-sgs">
+          <div class="hier-sg"><div class="hier-sg-title">SG 0</div><div style="font-size:9px;color:var(--text-dim);">쿼리 0~7</div></div>
+          <div class="hier-sg"><div class="hier-sg-title">SG 1</div><div style="font-size:9px;color:var(--text-dim);">쿼리 8~15</div></div>
+          <div class="hier-sg"><div class="hier-sg-title">SG 2</div><div style="font-size:9px;color:var(--text-dim);">쿼리 16~23</div></div>
+          <div class="hier-sg"><div class="hier-sg-title">SG 3</div><div style="font-size:9px;color:var(--text-dim);">쿼리 24~31</div></div>
+        </div>
+        <div class="hier-note">WM=4 warp 이 BQ=32 쿼리를 8개씩 나눠 맡음 (각 warp = 1 MMA fragment 행 = 8 쿼리). 코드의 <code>tm = 8 · TQ · simd_group_id</code> 가 이 분배.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="callout-warn">
+<strong>핵심 분배 규칙 (prefill):</strong> threadgroup 은 <strong>Q 시퀀스(쿼리 32개)를 4 warp 가 8개씩</strong> 나눠 가진다. 반대로 <strong>K/V 와 head dim 은 4 warp 가 똑같이 공유</strong>한다 — 모두 같은 K 블록을 보고 각자 자기 쿼리 8개에 대한 score 를 계산. (decode 는 정반대로 K 토큰을 warp 가 나눈다 — 문서2 참고.)
+</div>
+
+<!-- ============================================================ -->
+<h2 id="tiling">5. 타일링 — Q·K·V tile 과 메모리 피라미드</h2>
+
+<p>왜 "타일(tile)" 로 쪼개나? GPU 메모리가 피라미드이기 때문이다:</p>
+
+<div class="pyramid">
+  <div class="pyramid-axis left">⬆ 빠름</div>
+  <div class="pyramid-axis right">⬇ 큼</div>
+  <div class="pyramid-row l1"><div class="pyramid-level"><strong>Register</strong><small>~1 cycle · thread 전용 · MMA fragment 가 여기</small></div></div>
+  <div class="pyramid-row l2"><div class="pyramid-level"><strong>Threadgroup memory</strong><small>~수 cycle · 32~64KB · on-chip SRAM · Q/K/V tile 이 여기</small></div></div>
+  <div class="pyramid-row l3"><div class="pyramid-level"><strong>L1 / L2 cache</strong><small>~수십 cycle · 수 MB</small></div></div>
+  <div class="pyramid-row l4"><div class="pyramid-level"><strong>DRAM (Unified Memory)</strong><small>~수백 cycle · GB~ · Q/K/V 원본이 여기</small></div></div>
+</div>
+
+<p>Q·K·V 원본은 DRAM 에 있다. 매번 DRAM 을 읽으면 GPU 가 메모리를 기다리며 논다. <strong>해결: 작은 타일을 threadgroup memory(SRAM)에 한 번 올려두고 재사용.</strong></p>
+
+<h3>threadgroup memory 에 잡는 타일</h3>
+<p><span class="file-ref">steel_attention.h:123</span>:</p>
+<pre><code class="language-cpp">threadgroup T Q_smem[BQ * (BD + padQ)];   // Q tile: 32 × (128+pad)  ← 한 번 로드 후 계속 재사용
+threadgroup T KV_smem[tgp_mem_s];         // K tile 과 V tile 이 번갈아 쓰는 공용 버퍼</code></pre>
+
+<div class="callout">
+<strong>FlashAttention 의 정수:</strong> 전체 score 행렬 <code>S[40,40]</code> 을 <strong>절대 DRAM 에 통째로 안 쓴다.</strong> 대신 K 를 <code>BK=16</code> 토큰짜리 블록으로 잘라 흘려보내며(streaming), 각 블록마다 <code>S 일부 → softmax 갱신 → O 누적</code> 을 register/SRAM 안에서 끝낸다. 메모리 대역폭을 아끼는 게 곧 속도다.
+</div>
+
+<h3>K 는 왜 "transposed" 로 로드하나</h3>
+<p><span class="file-ref">steel_attention.h:141</span> 의 <code>KBlockLoader</code> 는 행/열 stride 를 바꿔(<code>kDstStrRow=1, kDstStrCol=LDK_tgp</code>) K 를 전치 저장한다. <code>S = Q @ Kᵀ</code> 에서 Kᵀ 가 필요하므로, 로드할 때 미리 전치해 두면 MMA 가 바로 먹을 수 있다.</p>
+
+<div class="matwrap">
+  <div class="matbox">
+    <div class="mattitle">DRAM 원본 K [40, 128]</div>
+    <table class="tmat">
+      <tr><td class="t-k">k0</td><td class="t-k">·</td><td class="t-k">·</td><td class="t-k">→128 dim</td></tr>
+      <tr><td class="t-k">k1</td><td class="t-k"></td><td class="t-k"></td><td class="t-k"></td></tr>
+      <tr><td class="t-k">⋮</td><td class="t-k"></td><td class="t-k"></td><td class="t-k"></td></tr>
+      <tr><td class="t-k">k39</td><td class="t-k"></td><td class="t-k"></td><td class="t-k"></td></tr>
+    </table>
+  </div>
+  <div style="align-self:center;font-size:22px;color:var(--good);">→</div>
+  <div class="matbox">
+    <div class="mattitle">SRAM K tile (1블록=16토큰, 전치)</div>
+    <table class="tmat">
+      <tr><td class="t-act">k0..k15 의 dim0</td></tr>
+      <tr><td class="t-k">dim1</td></tr>
+      <tr><td class="t-k">⋮</td></tr>
+      <tr><td class="t-k">dim127</td></tr>
+    </table>
+    <div style="font-size:10px;color:var(--text-dim);margin-top:4px;">한 번에 16토큰만</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h3>5.1 패딩(pad)과 leading dimension — 왜 행 끝에 빈칸을 두나</h3>
+
+<p>코드에서 가장 헷갈리는 세 줄. 구체적인 숫자(<code>T=half(2B)</code>, <code>BQ=32</code>, <code>BK=16</code>, <code>BD=128</code>)를 넣어 보면 정체가 드러난다 — <span class="file-ref">steel_attention.h:124</span>:</p>
+
+<pre><code class="language-cpp">constexpr short padQ = 16 / sizeof(T);   // = 16/2 = 8     (행 끝에 붙이는 여분 원소 수)
+constexpr short LDQ_tgp = BD + padQ;      // = 128 + 8 = 136 (실제 폭 + 패딩 = 행 stride)</code></pre>
+
+<p>SRAM 에 타일을 저장할 때 한 행을 <strong>실제 데이터 폭(BD=128)</strong> 만큼만 쓰지 않고, <strong>여분 8칸을 더 붙여 136칸 간격</strong>으로 깐다. <code>r</code>행 <code>c</code>열 원소의 주소는 <code>smem[r * 136 + c]</code> 가 된다 (실제 데이터는 c=0..127, c=128..135 는 안 쓰는 패딩).</p>
+
+<div class="ascii-art">  Q tile 한 행을 SRAM 에 저장하는 모습 (LDQ_tgp = 136)
+
+  행 0:  [ d0 d1 d2 ............ d127 ][ pad×8 ]   ← stride 136
+  행 1:  [ d0 d1 d2 ............ d127 ][ pad×8 ]
+  행 2:  [ d0 d1 d2 ............ d127 ][ pad×8 ]
+          └──── 실제 head dim 128 ────┘└ 안 씀 ┘
+         ↑ 다음 행은 정확히 136 원소 = 272 byte 뒤에서 시작</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h4 style="margin-top:0;">이유 ① 16-byte 정렬</h4>
+    <p style="margin:0;font-size:13px;">로더와 MMA 는 한 번에 <strong>128-bit(=16 byte) 벡터</strong>로 읽고 쓴다. 행 stride 가 16B 의 배수여야 모든 행의 시작 주소가 16B 경계에 떨어져 정렬된(빠른) 접근이 된다. <code>136 × 2B = 272B = 16×17</code> ✓. 패딩이 이 정렬을 맞춰 준다.</p>
+  </div>
+  <div class="card">
+    <h4 style="margin-top:0;">이유 ② bank conflict 회피</h4>
+    <p style="margin:0;font-size:13px;">SRAM 은 여러 <strong>bank</strong>로 나뉘어 동시 접근된다. 행 폭이 bank 수의 배수면, 여러 스레드가 <em>같은 열</em>을 읽을 때 전부 같은 bank 에 몰려 직렬화(느려짐)된다. 행마다 여분을 끼워 stride 를 어긋나게 하면 같은 열도 다른 bank 로 흩어진다.</p>
+  </div>
+</div>
+
+<div class="ascii-art">  bank conflict — 패딩이 왜 도움이 되나 (열 하나를 32 스레드가 동시에 읽을 때)
+
+  패딩 없음 (stride=128, bank 32개 가정):
+    행0 col5 → bank 5      ┐
+    행1 col5 → bank 5      ├─ 전부 bank 5 → 32-way conflict → 32배 느림 ✗
+    행2 col5 → bank 5      ┘
+
+  패딩 있음 (stride=136 = 32×4 + 8):
+    행0 col5 → bank 5      ┐
+    행1 col5 → bank 13     ├─ 매 행 +8 씩 밀려 서로 다른 bank → 충돌 없음 ✓
+    행2 col5 → bank 21     ┘</div>
+
+<h4>숫자로 검증 — 왜 128은 망하고 136은 되나</h4>
+<p>bank 번호 = <code>원소인덱스 % 32</code> (뱅크 32개 가정). 같은 열 <code>col5</code> 를 여러 행에서 동시에 읽을 때:</p>
+
+<div class="grid-2">
+  <div class="card">
+    <h4 style="margin-top:0;color:var(--bad);">❌ 패딩 없음 — LDQ = 128</h4>
+    <table style="font-size:11.5px;margin:0;">
+      <tr><th>접근</th><th>인덱스 r·128+5</th><th>bank %32</th></tr>
+      <tr><td>행0, col5</td><td>5</td><td><strong>5</strong></td></tr>
+      <tr><td>행1, col5</td><td>133</td><td><strong>5</strong></td></tr>
+      <tr><td>행2, col5</td><td>261</td><td><strong>5</strong></td></tr>
+      <tr><td>행3, col5</td><td>389</td><td><strong>5</strong></td></tr>
+    </table>
+    <p style="margin:8px 0 0;font-size:12px;"><code>128 % 32 = 0</code> → 한 행 건너뛰어도 같은 bank 복귀. 전부 bank 5 → 32-way 충돌.</p>
+  </div>
+  <div class="card">
+    <h4 style="margin-top:0;color:var(--good);">✅ 패딩 있음 — LDQ = 136</h4>
+    <table style="font-size:11.5px;margin:0;">
+      <tr><th>접근</th><th>인덱스 r·136+5</th><th>bank %32</th></tr>
+      <tr><td>행0, col5</td><td>5</td><td><strong>5</strong></td></tr>
+      <tr><td>행1, col5</td><td>141</td><td><strong>13</strong></td></tr>
+      <tr><td>행2, col5</td><td>277</td><td><strong>21</strong></td></tr>
+      <tr><td>행3, col5</td><td>413</td><td><strong>29</strong></td></tr>
+    </table>
+    <p style="margin:8px 0 0;font-size:12px;"><code>136 % 32 = 8</code> → 행마다 bank +8 씩 어긋남. 모두 다른 bank → 병렬.</p>
+  </div>
+</div>
+
+<div class="callout callout-purple">
+<strong>"MMA가 128bit=8개 읽는다"와 헷갈리지 말 것:</strong> 그건 <strong>가로 방향 읽기 폭</strong>(연속 <code>d0~d7</code> 을 한 트랜잭션에)이고, <code>LDQ</code> 는 <strong>세로 방향 행 간격</strong>이다. 둘은 별개인데 <code>padQ</code> 값이 우연히 둘 다 8이라 헷갈린다. <code>padQ = 16/sizeof(T) = 8</code> 로 정한 건 ① 행이 16B 경계를 유지하면서(<code>136×2B=272=16×17</code>) ② 동시에 <code>128%32=0</code> 함정을 깨는, "정렬을 안 깨는 최소 패딩"이기 때문이다.</div>
+
+<div class="callout callout-warn">
+<strong>한 줄 요약:</strong> <code>pad*</code> 는 "행 끝 여분 원소", <code>LD*_tgp</code> 는 "그 여분을 포함한 실제 행 간격(stride)". 데이터 폭이 아니라 <strong>다음 행까지의 거리</strong>다. 그래서 뒤에서 <code>Qs_offset = (tm+sm) * LDQ_tgp + sn</code> (<span class="file-ref">steel_attention.h:200</span>) 처럼 행 인덱스에 <code>LD</code> 를 곱한다.</div>
+
+<!-- ============================================================ -->
+<h3>5.2 K·V 공용 버퍼 — 왜 크기를 <code>max</code> 로 잡나</h3>
+
+<p>K tile 과 V tile 은 한 KV 블록 안에서 <strong>시간차로</strong> 쓰인다 (먼저 <code>S=Q@Kᵀ</code> 에 K, 그 다음 <code>O+=S@V</code> 에 V). 둘이 동시에 살아있을 필요가 없으니 <strong>SRAM 한 덩어리(<code>KV_smem</code>)를 번갈아 재사용</strong>한다 — <span class="file-ref">steel_attention.h:135</span>:</p>
+
+<pre><code class="language-cpp">threadgroup T KV_smem[tgp_mem_s];
+threadgroup T* Ks = KV_smem;   // 같은
+threadgroup T* Vs = KV_smem;   // 주소!</code></pre>
+
+<p>문제는 K 와 V 의 레이아웃이 달라 <strong>필요 크기가 다르다</strong>는 것. 한 버퍼에 둘 다 담아야 하므로 더 큰 쪽으로 크기를 잡는다:</p>
+
+<table>
+  <tr><th>버퍼</th><th>식</th><th>숫자 대입 (BK=16, BD=128, pad=8)</th><th>크기</th></tr>
+  <tr><td><code>tgp_mem_0</code> (K, 전치)</td><td><code>(BK+padK) × BD</code></td><td><code>(16+8) × 128 = 24 × 128</code></td><td><strong>3072</strong></td></tr>
+  <tr><td><code>tgp_mem_1</code> (V)</td><td><code>BK × (BD+padV)</code></td><td><code>16 × (128+8) = 16 × 136</code></td><td>2176</td></tr>
+  <tr><td><code>tgp_mem_s</code></td><td><code>max(0, 1)</code></td><td>둘 중 큰 값</td><td><strong>3072</strong></td></tr>
+</table>
+
+<div class="ascii-art">  하나의 KV_smem (3072 원소) 를 시간차로 재사용
+
+  ┌─────────────────────────────────────────┐
+  │  단계 A:  Ks 로 사용 — K 16토큰을 전치 저장 │  3072 중 사용
+  │           S = Q @ Kᵀ 계산                  │
+  ├─────────────────────────────────────────┤  ← 같은 메모리, barrier 후 덮어씀
+  │  단계 B:  Vs 로 사용 — V 16토큰 저장        │  2176 중 사용
+  │           O += S @ V 누적                  │
+  └─────────────────────────────────────────┘
+   버퍼는 둘 중 큰 3072 으로 한 번만 잡고 → SRAM 절약</div>
+
+<!-- ============================================================ -->
+<h3>5.3 세 개의 BlockLoader — 같은 추상화, 다른 stride 로 레이아웃을 만든다</h3>
+
+<p>그럼 "전치 저장", "패딩 stride" 는 누가 실제로 수행하나? <code>BlockLoaderT</code> 템플릿이다. <strong>세 로더가 모두 같은 클래스</strong>인데, 템플릿 인자(<code>kDstStrRow</code>/<code>kDstStrCol</code>)만 바꿔서 SRAM 에 깔리는 모양을 다르게 만든다 — <span class="file-ref">steel_attention.h:142</span>:</p>
+
+<table>
+  <tr><th>로더</th><th>kDstStrRow<br><small>(행 방향 stride)</small></th><th>kDstStrCol<br><small>(열 방향 stride)</small></th><th>결과 레이아웃</th></tr>
+  <tr><td><code>QBlockLoader</code></td><td><code>LDQ_tgp</code> (=136)</td><td><code>1</code></td><td>행 우선(row-major). 행마다 136칸 점프, 열은 1칸씩 → <strong>그대로 저장</strong></td></tr>
+  <tr><td><code>KBlockLoader</code></td><td><code>1</code></td><td><code>LDK_tgp</code> (=24)</td><td>행/열 stride 가 <strong>뒤바뀜</strong> → DRAM 의 행이 SRAM 의 열로 = <strong>전치 저장</strong></td></tr>
+  <tr><td><code>VBlockLoader</code></td><td><code>LDV_tgp</code> (=136)</td><td><code>1</code></td><td>Q 와 동일한 row-major</td></tr>
+</table>
+
+<div class="callout">
+<strong>핵심 트릭:</strong> 전치(transpose)는 별도 연산이 아니라 <strong>"저장할 때 행 stride 와 열 stride 를 맞바꾸는 것"</strong>이다. K 로더는 <code>kDstStrRow=1, kDstStrCol=LDK_tgp</code> 로 둬서, DRAM 에서 순차로 읽은 한 행(=한 토큰의 128 dim)을 SRAM 에서는 <em>한 열(세로)</em>로 흩어 쓴다. 그 결과가 곧 <code>Kᵀ</code> 라서 <code>S=Q@Kᵀ</code> 의 MMA 가 추가 전치 없이 바로 먹는다 (5장 끝의 그림 참조).</div>
+
+<pre><code class="language-cpp">// 로더 생성 — 두 번째 인자가 "DRAM 쪽" 행 stride(시퀀스 stride)
+// steel_attention.h:170
+QBlockLoader loader_q(Q, params-&gt;Q_strides[2], Qs, simd_group_id, simd_lane_id);
+KBlockLoader loader_k(K, params-&gt;K_strides[2], Ks, simd_group_id, simd_lane_id);
+VBlockLoader loader_v(V, params-&gt;V_strides[2], Vs, simd_group_id, simd_lane_id);</code></pre>
+
+<div class="ascii-art">  세 로더가 같은 데이터를 SRAM 에 깔아놓은 최종 그림 (한 KV 블록 기준)
+
+   Q_smem  (32토큰 × 136)         KV_smem (3072, 재사용)
+   ┌──────────────┬──┐           단계A: Ks = Kᵀ          단계B: Vs = V
+   │ q0  d0..d127 │░░│            ┌──────────┬──┐         ┌──────────────┬──┐
+   │ q1  d0..d127 │░░│            │ d0 k0..k15│░░│         │ v0 d0..d127  │░░│
+   │ ⋮            │░░│            │ d1 k0..k15│░░│         │ v1 d0..d127  │░░│
+   │ q31 d0..d127 │░░│            │ ⋮         │░░│         │ ⋮            │░░│
+   └──────────────┴──┘            │ d127      │░░│         │ v15 d0..d127 │░░│
+     ░ = 패딩(LDQ=136)            └──────────┴──┘         └──────────────┴──┘
+                                  세로가 토큰(전치!)        가로가 dim(정상)
+                                  LDK=24                   LDV=136</div>
+
+<!-- ============================================================ -->
+<h2 id="mma">6. MMA — 8×8 simdgroup_matrix 와 lane 매핑</h2>
+
+<p>Apple GPU 에는 <strong>simdgroup_matrix</strong> 라는 행렬곱 전용 명령이 있다. 한 SIMD group(32 lane)이 협력해 <strong>8×8 타일(fragment)</strong> 단위로 곱셈-누적(MMA)을 한 명령에 처리한다.</p>
+
+<pre><code class="language-cpp">// steel_attention.h:169
+constexpr short kFragSize = 8;             // fragment = 8×8
+constexpr int   kNWarps   = WM * WN;       // = 4
+constexpr int TQ = BQ / (kNWarps*kFragSize); // 32/(4·8) = 1  Q방향 fragment/warp
+constexpr int TK = BK / kFragSize;           // 16/8 = 2      K방향 fragment 수
+constexpr int TD = BD / kFragSize;           // 128/8 = 16    D방향 fragment 수</code></pre>
+
+<p>32 lane 이 8×8=64 원소를 어떻게 나눠 갖나? <span class="file-ref">mma.h:51</span>: <code>kElemsPerFrag = 64/32 = 2</code> → <strong>lane 하나가 fragment 원소 2개</strong>를 register 에 보관. lane→좌표 매핑은 <code>get_coord()</code> (<span class="file-ref">mma.h:71</span>) 가 결정한다.</p>
+
+<div class="ascii-art">  SIMD group 0 (32 lane) 이 협력해 보관하는 8×8 fragment
+  (각 칸의 숫자 = 그 원소를 담당하는 lane ID, 한 lane 은 2칸)
+
+        col0  col1  col2  col3  col4  col5  col6  col7
+  row0 [  0 ][  0 ][  1 ][  1 ][  2 ][  2 ][  3 ][  3 ]
+  row1 [  4 ][  4 ][  5 ][  5 ][  6 ][  6 ][  7 ][  7 ]
+  row2 [  8 ][  8 ][  9 ][  9 ][ 10 ][ 10 ][ 11 ][ 11 ]
+  row3 [ 12 ][ 12 ][ 13 ][ 13 ][ 14 ][ 14 ][ 15 ][ 15 ]
+  row4 [ 16 ][ 16 ][ 17 ][ 17 ][ 18 ][ 18 ][ 19 ][ 19 ]
+  row5 [ 20 ][ 20 ][ 21 ][ 21 ][ 22 ][ 22 ][ 23 ][ 23 ]
+  row6 [ 24 ][ 24 ][ 25 ][ 25 ][ 26 ][ 26 ][ 27 ][ 27 ]
+  row7 [ 28 ][ 28 ][ 29 ][ 29 ][ 30 ][ 30 ][ 31 ][ 31 ]
+
+  → "행렬을 register 에 흩뿌려 담고, MMA 명령 한 방에 8×8 곱셈누적" 이 핵심.
+  → 개발자는 lane 위치를 직접 안 만지고 MMAFrag/MMATile 추상화로 다룸.</div>
+
+<p>실제 코드의 행렬 타일 객체들 (<span class="file-ref">steel_attention.h:186</span>):</p>
+<pre><code class="language-cpp">MMATile&lt;AccumType, TQ, 1,  ...&gt; Qtile;   // Q  조각 (8 쿼리 × 8 dim)
+MMATile&lt;AccumType, 1,  TK, ...&gt; Ktile;   // K  조각
+MMATile&lt;AccumType, TQ, TK, ...&gt; Stile;   // S = Q@Kᵀ 결과 (8 쿼리 × 16 키)
+MMATile&lt;AccumType, 1,  1,  ...&gt; Vtile;   // V  조각
+MMATile&lt;AccumType, TQ, TD, ...&gt; Otile;   // O 누적 (8 쿼리 × 128 dim)
+Otile.clear();                            // O 를 0 으로 초기화</code></pre>
+
+<!-- ============================================================ -->
+<h3>6.1 lane → SRAM 주소 매핑 — <code>sm / sn / tm</code> 과 <code>*_offset</code> 의 정체</h3>
+
+<p>커널에서 가장 암호 같은 부분 (<span class="file-ref">steel_attention.h:245</span>):</p>
+
+<pre><code class="language-cpp">const short2 simd_coord = MMAFrag_acc_t::get_coord(simd_lane_id);
+const short sm = simd_coord.y;   // 이 lane의 fragment 내 "행" 오프셋
+const short sn = simd_coord.x;   // 이 lane의 fragment 내 "열" 오프셋
+const short tm = kFragSize * TQ * simd_group_id;  // 이 warp가 맡는 Q행 묶음 시작
+const short Qs_offset = (tm + sm) * LDQ_tgp + sn;  // 내가 SRAM에서 읽기 시작할 주소</code></pre>
+
+<p>의미: "<strong>이 lane 이 SRAM 타일의 어느 칸부터 읽어야 하나</strong>"를 계산하는 좌표 변환이다. 두 단계로 나뉜다 — ① warp(SIMD group)별로 Q 행 묶음을 나누고(<code>tm</code>), ② 그 안에서 lane이 fragment 내 자기 위치를 잡는다(<code>sm</code>,<code>sn</code>).</p>
+
+<div class="ascii-art">  ① warp 분할 — BQ=32 쿼리행을 4개 warp가 8행씩 나눠 맡는다 (tm = 8 × warp_id)
+
+     Q tile (SRAM, 32행 × 136)
+    ┌───────────────────────────┐
+    │ 행 0~7   ← warp0  (tm=0)   │
+    │ 행 8~15  ← warp1  (tm=8)   │
+    │ 행 16~23 ← warp2  (tm=16)  │
+    │ 행 24~31 ← warp3  (tm=24)  │
+    └───────────────────────────┘
+
+  ② lane 분할 — 한 warp의 8×8 fragment 안에서 (sm=행, sn=열). §6 의 lane맵과 동일.
+     예) lane 0 → (sm=0, sn=0),  lane 5 → (sm=1, sn=2),  lane 31 → (sm=7, sn=6)
+
+  ③ 합산 — warp2 의 lane 5 가 읽을 Q 시작 칸:
+     Qs_offset = (tm + sm)·LDQ_tgp + sn = (16 + 1)·136 + 2 = 2314
+                 └ 행 17 ┘            └열2┘   → 즉 SRAM 의 "쿼리행 17, dim 2"</div>
+
+<table>
+<tr><th>변수</th><th>축</th><th>의미</th><th>왜 그 식인가</th></tr>
+<tr><td><code>tm</code></td><td>Q 시퀀스(행)</td><td>warp별 8행 묶음의 시작 행</td><td><code>kFragSize·TQ·warp_id</code> = warp마다 8행씩 점프</td></tr>
+<tr><td><code>sm</code></td><td>행 (fragment 내)</td><td>lane의 행 오프셋 0~7</td><td><code>get_coord().y</code> — HW의 lane 배치 규칙</td></tr>
+<tr><td><code>sn</code></td><td>열 (fragment 내)</td><td>lane의 열 오프셋</td><td><code>get_coord().x</code></td></tr>
+<tr><td><code>Qs_offset</code></td><td>—</td><td>Q tile 1D 시작 주소</td><td><code>(행)·LDQ_tgp + (열)</code> ← §5.1의 stride 인덱싱</td></tr>
+<tr><td><code>Ks_offset</code></td><td>—</td><td>K tile(전치) 시작 주소</td><td>전치라 dim이 행 → <code>sm·LDK_tgp + sn</code></td></tr>
+</table>
+
+<div class="callout">
+<strong>핵심:</strong> <code>tm</code> 은 "warp 사이" 분할(거칠게 8행씩), <code>sm/sn</code> 은 "warp 안 lane" 분할(8×8 안에서). 둘을 더해 <code>(tm+sm)</code> 이 곧 <strong>이 lane이 맡은 실제 쿼리행</strong>이 된다. 그래서 뒤의 causal/mask 코드에서도 <code>row_pos = tid.x·BQ + tm + sm + ...</code> 로 같은 식이 등장한다 — "내가 맡은 쿼리의 전역 위치"를 재구성하는 것.</div>
+
+<div class="callout-warn">
+<strong><code>Qs_tile_stride</code> vs <code>Ks_tile_stride</code> 가 다른 이유</strong> (<span class="file-ref">steel_attention.h:256</span>): head dim 을 8씩 훑을 때 다음 fragment 까지의 거리. Q 는 dim 이 <em>열</em>이라 <code>+kFragSize(=8)</code>, K 는 전치라 dim 이 <em>행</em>이라 <code>+kFragSize·LDK_tgp</code>. 같은 "dim 한 칸 이동"이지만 레이아웃이 달라 stride 가 다르다.</div>
+
+<!-- ============================================================ -->
+<h2 id="layout">7. 메모리 레이아웃 &amp; 포인터 오프셋 — 내 블록의 주소 계산하기</h2>
+
+<p>커널 맨 앞 <span class="file-ref">steel_attention.h:88-108</span> 의 이 짧은 포인터 산수가 사실 가장 헷갈린다. "왜 이렇게 더하고 곱하지?" 를 <strong>사용자 질문이 Q·K·V 행렬이 되는 과정부터</strong> 따라가며 풀어보자.</p>
+
+<pre><code class="language-cpp">Q += tid.z * Q_strides[0]      // Batch
+   + tid.y * Q_strides[1]      // Head
+   + tid.x * BQ * Q_strides[2]; // Sequence (Q블록)
+ulong kv_head_idx = int(tid.y) / params-&gt;gqa_factor;   // ★ GQA 매핑
+K += tid.z * K_strides[0] + kv_head_idx * K_strides[1]; // Batch + Head (seq offset 없음!)
+V += tid.z * V_strides[0] + kv_head_idx * V_strides[1];
+O += tid.z * O_strides[0] + tid.y * O_strides[1] + tid.x * BQ * O_strides[2]; // Q 와 동일</code></pre>
+
+<h3>7.1 사용자 질문 → Q·K·V 행렬 임베딩</h3>
+
+<div class="ascii-art">  "대한민국의 수도와 …설명해줘"
+        │  토크나이저
+        ▼
+  40개 토큰  [tok0, tok1, ..., tok39]
+        │  임베딩 룩업 (각 토큰 → 4096차원 벡터)
+        ▼
+  X  [40 × 4096]      (시퀀스 40, hidden 4096)
+        │  선형투영  Wq, Wk, Wv
+        ├───────────────► Q = X·Wq  [40 × 4096] ─reshape→ [40, 32heads, 128]
+        ├───────────────► K = X·Wk  [40 × 1024] ─reshape→ [40,  8heads, 128]  (GQA: KV는 8헤드)
+        └───────────────► V = X·Wv  [40 × 1024] ─reshape→ [40,  8heads, 128]
+        │  transpose (head 를 앞으로)
+        ▼
+  Q : [B=1, H=32, L=40, D=128]      ← attention 커널이 받는 모양
+  K : [B=1, H= 8, L=40, D=128]      ← KV 는 헤드가 8개뿐 (GQA)
+  V : [B=1, H= 8, L=40, D=128]</div>
+
+<div class="callout"><strong>여기서 이미 비대칭이 생긴다:</strong> Q 는 헤드 32개, K·V 는 헤드 8개. Llama 3 의 <strong>GQA(Grouped-Query Attention)</strong> — 메모리를 아끼려 여러 Q헤드가 KV헤드 하나를 공유. 이게 코드의 <code>tid.y / gqa_factor</code> 로 이어진다.</div>
+
+<h3>7.2 4D 텐서는 1D 메모리에 "눕는다" — stride 의 정체</h3>
+
+<p>GPU 메모리는 평평한 1차원이다. <code>[B,H,L,D]</code> 4D 텐서는 row-major 로 펼쳐 저장되고, <strong>stride = "그 축으로 1칸 가려면 메모리에서 몇 칸 건너뛰나"</strong>:</p>
+
+<table>
+<tr><th>축</th><th>stride 식 (뒤 축들의 곱)</th><th>Q [1,32,40,128] 값</th><th>코드</th></tr>
+<tr><td>Batch</td><td>H·L·D</td><td>32·40·128 = <strong>163,840</strong></td><td><code>Q_strides[0]</code></td></tr>
+<tr><td>Head</td><td>L·D</td><td>40·128 = <strong>5,120</strong></td><td><code>Q_strides[1]</code></td></tr>
+<tr><td>Sequence</td><td>D</td><td><strong>128</strong></td><td><code>Q_strides[2]</code></td></tr>
+<tr><td>Dim</td><td>1</td><td><strong>1</strong> (연속)</td><td>(생략, =1)</td></tr>
+</table>
+
+<div class="ascii-art">  Q [1, 32, 40, 128] 가 1D 메모리에 눕는 모습 (한 칸 = half 하나)
+
+  주소: 0          5120        10240            163839
+        │ head0     │ head1     │ head2  ...      │
+        ├──────────┼──────────┼─────────────────┤
+        │ L0 L1 ... L39 (각 L 마다 128 dim)        │
+        └─ seq 1칸 = +128 ──┘
+           head 1칸 = +5120 (=40토큰×128dim)
+           batch 1칸 = +163840 (=32헤드 전체)
+
+  → 원소 (b,h,l,d) 주소 = b·163840 + h·5120 + l·128 + d</div>
+
+<p>그래서 포인터 오프셋 코드는 <strong>"3D grid 좌표 <code>tid</code> 를 1D 메모리 주소로 번역"</strong> 하는 일이다. <a href="#hierarchy">4장</a>에서 본 <code>grid=(NQ,H,B)</code> 의 좌표가 그대로 들어간다:</p>
+
+<table>
+<tr><th>코드 항</th><th>의미</th><th>예: TG (tid.x=1, tid.y=5, tid.z=0)</th></tr>
+<tr><td><code>tid.z · Q_strides[0]</code></td><td>몇 번 배치?</td><td>0 · 163840 = 0</td></tr>
+<tr><td><code>tid.y · Q_strides[1]</code></td><td>몇 번 헤드?</td><td>5 · 5120 = 25,600</td></tr>
+<tr><td><code>tid.x · BQ · Q_strides[2]</code></td><td>몇 번째 Q블록? (블록당 BQ=32 토큰)</td><td>1 · 32 · 128 = 4,096</td></tr>
+<tr><td colspan="2"><strong>→ Q 시작 주소 = 29,696</strong></td><td>head5, 쿼리 32~63</td></tr>
+</table>
+
+<div class="callout-warn"><strong>왜 <code>tid.x · BQ</code> 인가?</strong> grid.x 는 "Q블록 번호"(0,1,2,…)다. 블록 하나가 <code>BQ=32</code> 토큰을 맡으므로, 블록 번호를 <strong>실제 토큰 행</strong>으로 바꾸려면 <code>×BQ</code> 가 필요. 블록1 → 토큰 32부터. 그 토큰 행을 메모리 주소로 바꾸려 다시 <code>×Q_strides[2]</code>.</div>
+
+<h3>7.3 이 threadgroup 이 소유하는 "조각" 시각화</h3>
+
+<p>TG (tid.x=1, tid.y=5, tid.z=0) 가 위 주소 계산으로 잘라가는 Q 의 조각:</p>
+
+<div class="matbox" style="text-align:center;">
+<div class="mattitle">Q [B=1, H=32, L=40, D=128] 중 이 TG 가 맡는 부분</div>
+<table class="tmat" style="font-size:9px;">
+  <tr>
+    <td style="border:none;"></td>
+    <td class="t-k">head0</td><td class="t-k">…</td><td class="t-k">head4</td>
+    <td class="t-act">head5</td>
+    <td class="t-k">head6</td><td class="t-k">…</td><td class="t-k">head31</td>
+  </tr>
+  <tr>
+    <td class="t-q">쿼리0~31<br/>(블록0)</td>
+    <td class="t-k">·</td><td class="t-k">·</td><td class="t-k">·</td>
+    <td class="t-k">다른 TG</td>
+    <td class="t-k">·</td><td class="t-k">·</td><td class="t-k">·</td>
+  </tr>
+  <tr>
+    <td class="t-q">쿼리32~39<br/>(블록1)</td>
+    <td class="t-k">·</td><td class="t-k">·</td><td class="t-k">·</td>
+    <td class="t-act">★ 내 조각<br/>[8×128]</td>
+    <td class="t-k">·</td><td class="t-k">·</td><td class="t-k">·</td>
+  </tr>
+</table>
+<div class="legend">
+  <span><span class="swatch t-act"></span> 이 TG 가 계산 (head5 · 블록1)</span>
+  <span><span class="swatch t-k"></span> 다른 64개 TG 가 각자</span>
+  <span style="color:var(--text-dim);">grid=(2,32,1)=64 TG 가 격자를 빈틈없이 분할</span>
+</div>
+</div>
+
+<p>즉 <strong>오프셋 산수 = "내 격자 칸의 좌상단 주소로 포인터를 옮기는 것"</strong>. 옮긴 뒤부터는 BlockLoader 가 그 칸만 SRAM 으로 읽는다. 64개 TG 가 각자 다른 칸으로 포인터를 옮겨 동시에 일한다.</p>
+
+<h3>7.4 왜 Q·O 는 seq offset 이 있고, K·V 는 없나?</h3>
+
+<div class="grid-2">
+<div class="card">
+<h4 style="color:var(--accent);">Q, O — seq offset 있음</h4>
+<pre><code class="language-cpp">... + tid.x*BQ*Q_strides[2]</code></pre>
+<p>이 TG 는 쿼리 <strong>BQ=32개 블록 하나</strong>만 책임진다. 그래서 시퀀스 방향으로 자기 블록 위치만큼 점프. 출력 O 도 같은 위치에 쓰므로 동일.</p>
+</div>
+<div class="card">
+<h4 style="color:var(--purple);">K, V — seq offset 없음</h4>
+<pre><code class="language-cpp">K += tid.z*K_strides[0] + kv_head_idx*K_strides[1];
+//   (배치 + 헤드)까지만! 시퀀스는 head 시작점부터</code></pre>
+<p>이 TG 는 자기 쿼리블록을 <strong>전체 KV 시퀀스</strong>와 attention 해야 한다. K·V 는 커널 안의 <code>kb 루프</code>(<a href="#flow">8장</a>)가 처음부터 끝까지 블록 단위로 훑는다 → 시작 포인터는 <strong>head 의 첫 토큰</strong>이면 충분.</p>
+</div>
+</div>
+
+<div class="ascii-art">  Q는 "내 32행"만, K/V는 "전체 열"을 본다
+
+         K 전체 시퀀스 (40토큰) ────────────────►
+        ┌───────────────────────────────────────┐
+  Q블록1 │  S[8 × 40]  ← 이 TG 가 만드는 score 조각  │
+ (쿼리32~39)└───────────────────────────────────────┘
+         ▲ Q 포인터: 쿼리32 행으로 점프 (seq offset O)
+                K/V 포인터: head 첫 토큰(토큰0)에 둠 → kb 루프가 0→39 streaming
+                            (seq offset 불필요)</div>
+
+<h3>7.5 GQA — 왜 <code>kv_head_idx = tid.y / gqa_factor</code>?</h3>
+
+<p>Q헤드는 32개, KV헤드는 8개. Q헤드 <code>tid.y</code> 가 어느 KV헤드를 봐야 하는지 <strong>나눗셈으로 매핑</strong>한다 (<code>gqa_factor = 32/8 = 4</code>):</p>
+
+<div class="ascii-art">  32 Q헤드  →  8 KV헤드  (4개씩 묶어 공유)
+
+   Q헤드:  0  1  2  3 │ 4  5  6  7 │ 8  9 10 11 │ ... │ 28 29 30 31
+            └────┬────┘ └────┬────┘ └────┬────┘       └─────┬─────┘
+   tid.y/4:      0           1           2          ...       7
+   KV헤드:    ┌─────┐     ┌─────┐     ┌─────┐             ┌─────┐
+              │ KV0 │     │ KV1 │     │ KV2 │   ...       │ KV7 │
+              └─────┘     └─────┘     └─────┘             └─────┘
+
+   예) tid.y=5  →  kv_head_idx = 5/4 = 1  →  KV헤드 1 의 K·V 를 읽음</div>
+
+<table>
+<tr><th>tid.y (Q헤드)</th><th>kv_head_idx = tid.y/4</th><th>읽는 KV헤드</th></tr>
+<tr><td>0, 1, 2, 3</td><td>0</td><td>KV0</td></tr>
+<tr><td>4, 5, 6, 7</td><td>1</td><td>KV1</td></tr>
+<tr><td>…</td><td>…</td><td>…</td></tr>
+<tr><td>28, 29, 30, 31</td><td>7</td><td>KV7</td></tr>
+</table>
+
+<div class="callout-good"><strong>왜 GQA 인가:</strong> KV 캐시는 추론 메모리의 큰 부분이다. KV헤드를 32→8 로 줄이면 KV 캐시·메모리 대역폭이 <strong>1/4</strong>. 품질 손실은 작고 속도·메모리 이득은 크다. 그래서 Q 는 <code>tid.y</code> 그대로, K·V 는 <code>tid.y/gqa_factor</code> 로 "4 Q헤드가 같은 KV 를 공유"하게 짠 것.</div>
+
+<h3>7.6 mask 는 왜 batch·head 만?</h3>
+<pre><code class="language-cpp">if (has_mask) {
+  mask += tid.z*M_strides[0] + tid.y*M_strides[1];  // 배치 + (Q)헤드만
+}</code></pre>
+<p>마스크는 <code>[B, H, qL, kL]</code> 모양. 시퀀스 방향(qL, kL) 오프셋은 K/V 와 같은 이유로 커널 내부에서 처리하므로, 시작 포인터는 batch·head 까지만 옮긴다. (mask 는 Q헤드 기준이라 <code>kv_head_idx</code> 가 아니라 <code>tid.y</code>.)</p>
+
+<div class="callout"><strong>한 줄 정리:</strong> 이 오프셋 블록 = <strong>"grid 좌표 (tid) → 내가 맡은 텐서 조각의 시작 주소"</strong> 변환기. Q·O 는 (batch·head·Q블록), K·V 는 (batch·KV헤드)까지만 옮기고 시퀀스는 내부 루프가 훑는다. GQA 때문에 K·V 만 <code>tid.y/gqa_factor</code>.</div>
+
+<!-- ============================================================ -->
+<h2 id="flow">8. 커널 흐름 단계별 따라가기</h2>
+
+<p>이제 threadgroup (0,0,0) (head0, 쿼리 0~31) 의 입장에서, GPU 가 <code>attention()</code> 을 한 줄씩 실행하는 과정을 따라가자.</p>
+
+<div class="mermaid">
+flowchart TD
+    S0["① 블록 위치로 포인터 이동<br/>(batch·head·Q블록 오프셋)"] --> S1["② Q tile 1개 SRAM 로드<br/>(loop 밖 — 한 번만!)"]
+    S1 --> S2["③ max=-inf, sum=0 초기화<br/>causal 한계 kb_lim 계산"]
+    S2 --> L{"④ KV 블록 루프<br/>kb = 0 .. NK-1"}
+    L -->|"각 블록"| K1["K 블록 로드 → S = Q@Kᵀ (MMA)"]
+    K1 --> K2["scale · 마스킹(길이/causal/mask)"]
+    K2 --> K3["V 블록 로드"]
+    K3 --> K4["online softmax:<br/>row max → exp2 → factor → row sum"]
+    K4 --> K5["O = O·factor + S@V (MMA)"]
+    K5 --> L
+    L -->|"끝"| F1["⑤ O /= sum_score (정규화)"]
+    F1 --> F2["⑥ O 를 DRAM 에 저장"]
+    style S1 fill:#1c2030,stroke:#7dd3fc
+    style K4 fill:#1c2030,stroke:#fbbf24
+    style K5 fill:#1c2030,stroke:#34d399
+</div>
+
+<h3>① 블록 위치로 포인터 이동 <span class="file-ref">steel_attention.h:88</span></h3>
+<pre><code class="language-cpp">Q += tid.z*Q_strides[0] + tid.y*Q_strides[1] + tid.x*BQ*Q_strides[2];
+ulong kv_head_idx = int(tid.y) / params-&gt;gqa_factor;
+K += tid.z*K_strides[0] + kv_head_idx*K_strides[1];   // GQA: Q헤드→KV헤드 매핑</code></pre>
+<div class="callout">이 포인터 오프셋 계산이 <strong>"내 threadgroup 이 거대한 Q/K/V 텐서의 어느 조각을 맡았나"</strong> 를 정하는 핵심이다. stride·GQA·왜 K/V 만 seq offset 이 없는지를 행렬 그림과 함께 <a href="#layout">7장</a>에서 자세히 다뤘다.</div>
+
+<h3>② Q tile 을 SRAM 에 한 번만 로드 <span class="file-ref">steel_attention.h:209</span></h3>
+<pre><code class="language-cpp">if (!align_Q &amp;&amp; int(tid.x) == params-&gt;NQ_aligned) {
+  loader_q.load_safe(short2(BD, params-&gt;qL_rem));  // 마지막 블록: 경계 넘으면 0 채움
+} else {
+  loader_q.load_unsafe();                          // 꽉 찬 블록: 빠르게 통째 로드
+}</code></pre>
+<p>Q 블록0 은 쿼리 0~31 로 꽉 참 → <code>load_unsafe</code>. Q 블록1(쿼리 32~39, 8개뿐)은 <code>qL_rem=8</code> 로 <code>load_safe</code>. <strong>Q 는 루프 밖에서 단 한 번 로드</strong>하고 모든 K 블록에 재사용한다 — FlashAttention 의 이점.</p>
+
+<h3>③ 누적기 초기화 + causal 한계 <span class="file-ref">steel_attention.h:219</span></h3>
+<pre><code class="language-cpp">max_score[i] = -inf;  sum_score[i] = 0;        // online softmax 누적기
+if (do_causal) {
+  int q_max = (tid.x+1)*BQ + params-&gt;qL_off;
+  kb_lim = min(NK, (q_max+BK-1)/BK);           // 이 Q블록이 볼 필요 있는 마지막 K블록
+}</code></pre>
+<p>causal(인과) 마스크: 토큰 i 는 자기보다 뒤(미래)의 토큰을 못 본다. Q 블록0(쿼리 0~31)은 K 블록 0~1 만 보면 된다(쿼리 31 이 키 31 까지만) → 뒤 블록 계산을 아예 건너뛴다(<code>kb_lim</code>).</p>
+
+<h3>④ KV 블록 루프 — 본체 <span class="file-ref">steel_attention.h:250</span></h3>
+
+<h4>4a. S = Q @ Kᵀ (MMA 누적)</h4>
+<pre><code class="language-cpp">Stile.clear();
+STEEL_PRAGMA_UNROLL
+for (short dd = 0; dd &lt; TD; dd++) {          // head dim 을 8씩 16조각(TD=16)
+  Qtile.load(&amp;Qs[... dd ...]);                // SRAM → register fragment
+  Ktile.load(&amp;Ks[... dd ...]);
+  tile_matmad(Stile, Qtile, Ktile, Stile);   // Stile += Qtile · Ktile  (MMA 명령)
+}</code></pre>
+<p>head dim 128 을 8 dim 짜리 16조각으로 나눠, 각 조각의 부분곱을 <code>Stile</code> 에 누적 → <code>S[8쿼리 × 16키]</code> 완성. 이게 행렬곱(GEMM)이 일어나는 지점.</p>
+
+<!-- ===== interactive: dd 루프 시각화 ===== -->
+<div class="card" id="sdpaqk" style="margin-top:18px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+    <strong style="color:var(--accent-warm);">▶ dd 루프 인터랙티브 — Q·K 가 어떻게 불려 곱해지나 (한 warp 기준: 쿼리 8행)</strong>
+    <div style="display:flex;gap:6px;">
+      <button class="qk-btn" data-act="reset">↺ 리셋</button>
+      <button class="qk-btn" data-act="prev">◀ 이전</button>
+      <button class="qk-btn" data-act="next">다음 ▶</button>
+      <button class="qk-btn" data-act="play">⏵ 자동</button>
+    </div>
+  </div>
+
+  <div id="qk-formula" style="font-family:'SF Mono',Menlo,monospace;font-size:12.5px;margin:12px 0;color:var(--text);min-height:18px;"></div>
+
+  <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;">
+    <!-- Q -->
+    <div>
+      <div class="qk-cap">Qs (SRAM) — 8쿼리 × 16 dim블록(각 8dim)</div>
+      <div id="qk-Q" class="qk-grid" style="grid-template-columns:repeat(16,14px);"></div>
+      <div class="qk-axis">→ head dim (dd = 0..15)</div>
+    </div>
+    <div class="qk-op">@</div>
+    <!-- K^T -->
+    <div>
+      <div class="qk-cap">Ks (전치) — 16 dim블록 × 16키</div>
+      <div id="qk-K" class="qk-grid" style="grid-template-columns:repeat(16,14px);"></div>
+      <div class="qk-axis">→ 키 16개 / ↓ dim블록</div>
+    </div>
+    <div class="qk-op">=</div>
+    <!-- S -->
+    <div>
+      <div class="qk-cap">Stile (register 누적) — 8쿼리 × 16키</div>
+      <div id="qk-S" class="qk-grid" style="grid-template-columns:repeat(16,14px);"></div>
+      <div class="qk-axis">칸 숫자 = 누적된 dd 횟수</div>
+    </div>
+  </div>
+
+  <div class="qk-legend">
+    <span><span class="qk-sw" style="background:rgba(125,211,252,0.18);"></span> Q/K 비활성</span>
+    <span><span class="qk-sw" style="background:rgba(251,191,36,0.55);outline:2px solid var(--accent-warm);"></span> 이번 dd 에 로드된 fragment</span>
+    <span><span class="qk-sw" style="background:rgba(52,211,153,0.5);"></span> S 누적 중</span>
+  </div>
+  <p style="font-size:12px;color:var(--text-dim);margin:10px 0 0;">매 스텝: <code>Qtile</code>(파란 줄의 dd번째 dim블록)과 <code>Ktile</code>(dd번째 dim블록 행)을 register 로 로드 → <code>tile_matmad</code> 가 둘을 곱해 <code>Stile</code> 전체(8×16)에 누적(+1). 16번 돌면 head dim 128 전체의 내적이 완성된다.</p>
+</div>
+
+<style>
+  #sdpaqk .qk-btn { background:var(--bg-card); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer; }
+  #sdpaqk .qk-btn:hover { border-color:var(--accent); color:var(--accent); }
+  #sdpaqk .qk-cap { font-size:11px; color:var(--accent); margin-bottom:6px; font-family:'SF Mono',Menlo,monospace; }
+  #sdpaqk .qk-axis { font-size:10px; color:var(--text-dim); margin-top:5px; }
+  #sdpaqk .qk-op { font-size:24px; color:var(--good); align-self:center; padding-top:24px; }
+  #sdpaqk .qk-grid { display:grid; gap:2px; }
+  #sdpaqk .qk-cell { width:14px; height:14px; border-radius:2px; background:rgba(125,211,252,0.18);
+    font-size:8px; line-height:14px; text-align:center; color:var(--text-dim); }
+  #sdpaqk .qk-legend { display:flex; gap:16px; flex-wrap:wrap; font-size:11px; color:var(--text-dim); margin-top:14px; }
+  #sdpaqk .qk-legend span { display:inline-flex; align-items:center; gap:6px; }
+  #sdpaqk .qk-sw { width:13px; height:13px; border-radius:3px; display:inline-block; }
+</style>
+
+<script>
+(function(){
+  const root = document.getElementById("sdpaqk");
+  if (!root) return;
+  const TD = 16, BQ = 8, BK = 16;        // 한 warp: 8쿼리, 16키, head dim 16블록
+  const Qg = root.querySelector("#qk-Q");
+  const Kg = root.querySelector("#qk-K");
+  const Sg = root.querySelector("#qk-S");
+  const formula = root.querySelector("#qk-formula");
+  let dd = -1, timer = null;
+
+  // 셀 생성
+  const Qc = [], Kc = [], Sc = [];
+  for (let r=0;r<BQ;r++) for (let c=0;c<TD;c++){ const e=document.createElement("div"); e.className="qk-cell"; Qg.appendChild(e); Qc.push(e); }
+  for (let r=0;r<TD;r++) for (let c=0;c<BK;c++){ const e=document.createElement("div"); e.className="qk-cell"; Kg.appendChild(e); Kc.push(e); }
+  const Sval = [];
+  for (let r=0;r<BQ;r++) for (let c=0;c<BK;c++){ const e=document.createElement("div"); e.className="qk-cell"; Sg.appendChild(e); Sc.push(e); Sval.push(0); }
+
+  function render(){
+    // Q: dd 열 강조
+    for (let r=0;r<BQ;r++) for (let c=0;c<TD;c++){
+      const e=Qc[r*TD+c];
+      e.style.background = (c===dd) ? "rgba(251,191,36,0.55)" : "rgba(125,211,252,0.18)";
+      e.style.outline = (c===dd) ? "1px solid var(--accent-warm)" : "none";
+    }
+    // K: dd 행 강조
+    for (let r=0;r<TD;r++) for (let c=0;c<BK;c++){
+      const e=Kc[r*BK+c];
+      e.style.background = (r===dd) ? "rgba(251,191,36,0.55)" : "rgba(167,139,250,0.18)";
+      e.style.outline = (r===dd) ? "1px solid var(--accent-warm)" : "none";
+    }
+    // S: 누적값 표시
+    for (let i=0;i<Sc.length;i++){
+      Sc[i].textContent = Sval[i] || "";
+      const t = Sval[i]/TD;
+      Sc[i].style.background = Sval[i] ? `rgba(52,211,153,${0.15+0.5*t})` : "rgba(125,211,252,0.10)";
+    }
+    if (dd<0){ formula.innerHTML = "<span style='color:var(--text-dim)'>시작 전 — Stile.clear() (S=0). '다음 ▶' 을 눌러 dd 루프를 밟아보세요.</span>"; }
+    else {
+      const a=dd*8, b=dd*8+8;
+      formula.innerHTML = `dd = <b style='color:var(--accent-warm)'>${dd}</b> / ${TD-1} &nbsp; → &nbsp; `+
+        `Stile[8×16] += Qtile(Qs[:, ${a}:${b}]) · Ktile(Ks[${a}:${b}, :]) &nbsp; <span style='color:var(--good)'>(MMA)</span>`;
+    }
+  }
+  function step(n){
+    const nd = Math.max(-1, Math.min(TD-1, dd+n));
+    if (n>0 && dd<TD-1){ for (let i=0;i<Sval.length;i++) Sval[i]++; }
+    if (n<0 && dd>=0){ for (let i=0;i<Sval.length;i++) Sval[i]=Math.max(0,Sval[i]-1); }
+    dd = nd; render();
+  }
+  function reset(){ dd=-1; for(let i=0;i<Sval.length;i++)Sval[i]=0; stopPlay(); render(); }
+  function stopPlay(){ if(timer){clearInterval(timer); timer=null; root.querySelector('[data-act=play]').textContent="⏵ 자동";} }
+  root.querySelectorAll(".qk-btn").forEach(b=>b.addEventListener("click",()=>{
+    const a=b.dataset.act;
+    if(a==="next") step(1);
+    else if(a==="prev") step(-1);
+    else if(a==="reset") reset();
+    else if(a==="play"){
+      if(timer){ stopPlay(); }
+      else { if(dd>=TD-1) reset(); b.textContent="⏸ 정지";
+        timer=setInterval(()=>{ if(dd>=TD-1){ stopPlay(); } else step(1); }, 500); }
+    }
+  }));
+  reset();
+})();
+</script>
+<!-- ===== /interactive ===== -->
+
+<h4>4b. scale 적용 + 마스킹 <span class="file-ref">steel_attention.h:279</span></h4>
+<pre><code class="language-cpp">for (...) Stile.elems()[ii] *= scale;        // scale = 1/sqrt(D) · log2(e)
+// (1) 길이 마스크: 마지막 K블록에서 kL_rem 넘는 키 → -inf
+// (2) causal 마스크: row_pos &lt; col_pos 면 미래 → -inf
+// (3) 사용자 mask: has_mask 면 mask 값 더하거나 -inf</code></pre>
+<div class="callout-warn"><strong>왜 scale 에 log2(e) 를 곱하나?</strong> 뒤에서 <code>exp</code> 대신 <strong><code>exp2</code></strong>(2의 거듭제곱, HW 가 더 빠름)를 쓰기 때문. <code>exp(x) = exp2(x·log2(e))</code> 라서 scale 에 미리 <code>M_LOG2E_F</code> 를 녹였다(<span class="file-ref">:166</span>).</div>
+
+<h4>4c. online softmax <span class="file-ref">steel_attention.h:381</span></h4>
+<pre><code class="language-cpp">Stile.row_reduce&lt;MaxOp&gt;(new_max);             // 이번 블록 행별 최댓값
+Stile.row_bin_op&lt;ExpSubOp&gt;(new_max);          // S = exp2(S - new_max)
+factor[i] = exp2(max_score[i] - new_max[i]); // 이전 누적을 새 max 기준으로 재보정
+max_score[i] = new_max[i];
+Stile.row_reduce&lt;SumOp&gt;(sum_score_tmp);       // 이번 블록 행 합
+sum_score[i] = sum_score[i]*factor[i] + sum_score_tmp[i];
+Otile.row_bin_op&lt;MulOp&gt;(factor);              // 이전 O 도 factor 로 재보정</code></pre>
+<p>핵심은 <a href="#online">10장</a>에서 자세히. 요점: 전체 S 를 다 모으기 전에 <strong>블록마다 max·sum 을 갱신</strong>하며 정확한 softmax 를 만든다.</p>
+
+<h4>4d. O = O + S @ V (MMA) <span class="file-ref">steel_attention.h:425</span></h4>
+<pre><code class="language-cpp">for (iq..TQ) for (id..TD) for (ik..TK) {
+  Vtile.load(&amp;Vs[... ik, id ...]);
+  MMAFrag_acc_t::mma(Otile.frag_at(iq,id), Stile.frag_at(iq,ik),
+                     Vtile.frag_at(0,0),   Otile.frag_at(iq,id));
+}</code></pre>
+<p>방금 softmax 한 <code>S[8×16]</code> 에 <code>V[16×128]</code> 을 곱해 <code>O[8×128]</code> 에 누적. 두 번째 GEMM.</p>
+
+<h3>⑤⑥ 정규화 + 저장 <span class="file-ref">steel_attention.h:460</span></h3>
+<pre><code class="language-cpp">Otile.row_bin_op&lt;DivOp&gt;(sum_score);          // O /= 누적 sum  → 진짜 softmax 가중평균
+O += (tm+sm)*O_strides[2] + sn;
+Otile.store(O, params-&gt;O_strides[2]);        // register → DRAM (마지막 블록은 store_safe)</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="matrix">9. 타일링 매트릭스로 보는 전체 그림</h2>
+
+<p>head0, Q 블록0(쿼리 0~31)이 보는 <strong>40×40 score 행렬</strong>을 타일로 그려보자. (causal 이라 위 절반만 유효)</p>
+
+<div class="matbox" style="text-align:center;">
+<div class="mattitle">S = Q[32] @ Kᵀ[40] — BK=16 단위로 K 를 블록 분할, kb 루프로 streaming</div>
+<table class="tmat" style="font-size:9px;">
+  <tr>
+    <td style="border:none;"></td>
+    <td class="t-k" colspan="4">K블록0 (키0~15)</td>
+    <td class="t-k" colspan="4">K블록1 (키16~31)</td>
+    <td class="t-k" colspan="3">K블록2 (32~39)</td>
+  </tr>
+  <tr>
+    <td class="t-q">Q0<br/>(쿼리0~7)</td>
+    <td class="t-act" colspan="4">S 계산✓</td>
+    <td class="t-msk" colspan="4">causal:대부분 -inf</td>
+    <td class="t-msk" colspan="3">skip</td>
+  </tr>
+  <tr>
+    <td class="t-q">Q1<br/>(8~15)</td>
+    <td class="t-act" colspan="4">✓</td>
+    <td class="t-act" colspan="4">일부✓</td>
+    <td class="t-msk" colspan="3">skip</td>
+  </tr>
+  <tr>
+    <td class="t-q">Q2<br/>(16~23)</td>
+    <td class="t-act" colspan="4">✓</td>
+    <td class="t-act" colspan="4">✓</td>
+    <td class="t-msk" colspan="3">skip</td>
+  </tr>
+  <tr>
+    <td class="t-q">Q3<br/>(24~31)</td>
+    <td class="t-act" colspan="4">✓</td>
+    <td class="t-act" colspan="4">✓</td>
+    <td class="t-msk" colspan="3">일부 skip</td>
+  </tr>
+</table>
+<div class="legend">
+  <span><span class="swatch t-q"></span> Q 타일 (warp 별 8쿼리)</span>
+  <span><span class="swatch t-k"></span> K 블록 (16키)</span>
+  <span><span class="swatch t-act"></span> 실제 MMA 계산</span>
+  <span><span class="swatch t-msk"></span> causal 마스크 / skip</span>
+</div>
+</div>
+
+<p>한 threadgroup(=한 행 묶음 Q0~Q3, 즉 쿼리 0~31)이 K 블록 0 → 1 → (2는 causal 로 skip) 순서로 <strong>좌→우 streaming</strong> 하며, 각 단계에서 부분 S 를 만들고 softmax 를 갱신하고 O 에 누적한다. <strong>전체 40×40 행렬이 메모리에 한꺼번에 존재한 적이 없다</strong> — 이게 FlashAttention.</p>
+
+<div class="ascii-art">  한 K 블록 처리 = 3개 행렬 연산이 register/SRAM 안에서 연쇄
+
+   Q tile        Kᵀ block         S block        V block        O 누적
+  [32 × 128]  @  [128 × 16]   =  [32 × 16]      [16 × 128]     [32 × 128]
+   (SRAM)         (SRAM)          (register)  @   (SRAM)    →   (register)
+      └──── MMA (4a) ────┘   softmax(4c)        └─── MMA (4d) ───┘
+                                  ↓
+                        online max/sum 갱신</div>
+
+<!-- ============================================================ -->
+<h2 id="online">10. online softmax — 왜 블록마다 갱신하나</h2>
+
+<p>보통 softmax 는 <strong>전체 행</strong>의 max 와 합이 필요하다:</p>
+<pre><code class="language-python">softmax(s)_j = exp(s_j - max(s)) / Σ_k exp(s_k - max(s))</code></pre>
+<p>그런데 FlashAttention 은 K 를 블록으로 잘라 보기 때문에, <strong>마지막 블록을 보기 전엔 진짜 max 와 합을 모른다.</strong> 그래서 블록을 볼 때마다 "지금까지의 추정"을 보정한다.</p>
+
+<div class="card">
+<h4>블록 kb 를 처리할 때 (수식)</h4>
+<pre><code class="language-text">m_new = max(m_old, rowmax(S_kb))           // 새 최댓값
+factor = exp(m_old - m_new)                // 이전 결과를 새 기준으로 축소
+ℓ_new  = ℓ_old·factor + Σ exp(S_kb - m_new) // 정규화 합 갱신
+O_new  = O_old·factor + exp(S_kb - m_new)@V  // 출력 누적도 함께 보정</code></pre>
+</div>
+
+<p>코드 대응 (<span class="file-ref">steel_attention.h:384-452</span>):</p>
+<table>
+<tr><th>수식</th><th>코드</th></tr>
+<tr><td><code>m_new = max(m_old, rowmax)</code></td><td><code>Stile.row_reduce&lt;MaxOp&gt;(new_max)</code> (new_max 는 m_old 로 시작)</td></tr>
+<tr><td><code>exp(S - m_new)</code></td><td><code>Stile.row_bin_op&lt;ExpSubOp&gt;(new_max)</code> (exp2 사용)</td></tr>
+<tr><td><code>factor = exp(m_old - m_new)</code></td><td><code>factor[i] = fast::exp2(max_score[i]-new_max[i])</code></td></tr>
+<tr><td><code>ℓ = ℓ·factor + rowsum</code></td><td><code>sum_score[i] = sum_score[i]*factor[i] + sum_score_tmp[i]</code></td></tr>
+<tr><td><code>O = O·factor</code></td><td><code>Otile.row_bin_op&lt;MulOp&gt;(factor)</code> + 이후 <code>+= S@V</code></td></tr>
+</table>
+
+<div class="callout-good">
+<strong>왜 이래야 하나:</strong> max 를 빼는 건 <code>exp</code> 오버플로 방지(수치 안정성) 때문인데, 블록 streaming 중엔 max 가 계속 커질 수 있다. max 가 갱신될 때마다 <strong>이전에 쌓아둔 합·출력을 <code>factor</code> 로 똑같이 축소</strong>해 주면, 마지막에 가서도 "전체 max 로 한 번에 계산한 것"과 정확히 같은 값이 된다. 정확도 손실 0, 메모리는 블록 하나치만.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="summary">11. 요약</h2>
+
+<div class="card">
+<h4>Prefill (steel_attention) 한눈에</h4>
+<ol>
+<li><strong>언제:</strong> 쿼리 토큰 &gt; 8 (프롬프트 전체 처리). 우리 예: qL=40.</li>
+<li><strong>왜 이 커널:</strong> Q 가 여러 행 → GEMM → MMA(simdgroup_matrix) 하드웨어를 써야 빠름.</li>
+<li><strong>분할:</strong> grid=(NQ,H,B)=(2,32,1)=64 TG. 각 TG=128 thread=4 warp. <strong>warp 가 Q 쿼리를 8개씩</strong> 나눔, K/V·head dim 은 공유.</li>
+<li><strong>타일링:</strong> Q tile 1개를 SRAM 에 한 번 올리고, K/V 를 BK=16 블록으로 streaming. 전체 score 행렬을 DRAM 에 안 만듦(FlashAttention).</li>
+<li><strong>블록 루프:</strong> S=Q@Kᵀ(MMA) → scale·mask → online softmax → O+=S@V(MMA).</li>
+<li><strong>online softmax:</strong> 블록마다 max·sum 을 보정 누적해 정확도 유지.</li>
+<li><strong>마무리:</strong> O /= sum 정규화 후 DRAM 저장.</li>
+</ol>
+</div>
+
+<div class="callout">
+다음: 답변 생성(decode)에서는 쿼리가 1개뿐이라 완전히 다른 전략(<code>sdpa_vector</code>)을 쓴다. → <a href="02_decode_sdpa_vector.html">2번 문서: Decode 동작 분석</a>
+</div>
+
+<p style="margin-top:40px;color:var(--text-dim);font-size:13px;">참고 소스: <span class="file-ref">mlx/backend/metal/kernels/steel/attn/kernels/steel_attention.h</span> · <span class="file-ref">scaled_dot_product_attention.cpp</span> · <span class="file-ref">steel/attn/mma.h</span></p>
+
+</div>
+</body>
+</html>

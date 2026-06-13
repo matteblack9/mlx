@@ -260,6 +260,79 @@ class ScaledDotProductAttention : public Custom {
   bool output_logsumexp_;
 };
 
+class KiviFusedDequantizedMatmul : public Custom {
+ public:
+  KiviFusedDequantizedMatmul(
+      Stream stream,
+      std::function<std::vector<array>(std::vector<array>)> fallback,
+      float scale,
+      int key_group_size,
+      int bits)
+      : Custom(stream, std::move(fallback)),
+        scale_(scale),
+        key_group_size_(key_group_size),
+        bits_(bits) {}
+
+  void eval_cpu(const std::vector<array>& inputs, std::vector<array>& outputs)
+      override {
+    throw std::runtime_error("NYI");
+  }
+  void eval_gpu(const std::vector<array>& inputs, std::vector<array>& outputs)
+      override;
+
+  DEFINE_NAME(KiviFusedDequantizedMatmul)
+  bool is_equivalent(const Primitive& other) const override;
+  DEFINE_INPUT_OUTPUT_SHAPE()
+  auto state() const {
+    return std::make_tuple(nullptr, scale_, key_group_size_, bits_);
+  }
+
+ private:
+  float scale_;
+  int key_group_size_;
+  int bits_;
+};
+
+class KiviScaledDotProductAttention : public Custom {
+ public:
+  KiviScaledDotProductAttention(
+      Stream stream,
+      std::function<std::vector<array>(std::vector<array>)> fallback,
+      float scale,
+      bool do_causal,
+      int key_group_size,
+      int value_group_size,
+      int bits)
+      : Custom(stream, std::move(fallback)),
+        scale_(scale),
+        do_causal_(do_causal),
+        key_group_size_(key_group_size),
+        value_group_size_(value_group_size),
+        bits_(bits) {}
+
+  void eval_cpu(const std::vector<array>& inputs, std::vector<array>& outputs)
+      override {
+    throw std::runtime_error("NYI");
+  }
+  void eval_gpu(const std::vector<array>& inputs, std::vector<array>& outputs)
+      override;
+
+  DEFINE_NAME(KiviScaledDotProductAttention)
+  bool is_equivalent(const Primitive& other) const override;
+  DEFINE_INPUT_OUTPUT_SHAPE()
+  auto state() const {
+    return std::make_tuple(
+        nullptr, scale_, do_causal_, key_group_size_, value_group_size_, bits_);
+  }
+
+ private:
+  float scale_;
+  bool do_causal_;
+  int key_group_size_;
+  int value_group_size_;
+  int bits_;
+};
+
 class ScaledDotProductAttentionVJP : public Custom {
  public:
   ScaledDotProductAttentionVJP(

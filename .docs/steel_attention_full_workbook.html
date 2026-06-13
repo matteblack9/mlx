@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MLX steel_attention.h Full Interactive Workbook</title>
+<style>
+:root{
+  --bg:#0a0f1e; --bg2:#101832; --panel:#111b36; --panel2:#162342; --panel3:#0d1429;
+  --text:#eef5ff; --muted:#9fb2d6; --line:#2a3d68; --soft:#203253;
+  --q:#78d3ff; --k:#ffd86b; --v:#c4a2ff; --s:#ff9b86; --p:#ffcf90; --o:#7ee3b8;
+  --ok:#77e4aa; --warn:#f2c46d; --bad:#ff7f91; --accent:#7bdcff; --accent2:#a6f2c7;
+  --code:#090e1d; --shadow:0 16px 38px rgba(0,0,0,.28);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:linear-gradient(180deg,#070b16,#0a0f1e 35%,#0c1326);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+header{position:sticky;top:0;z-index:50;background:rgba(9,14,29,.9);border-bottom:1px solid var(--line);backdrop-filter:blur(12px);}
+.headerInner{max-width:1700px;margin:0 auto;padding:18px 22px 14px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center}
+h1{margin:0;font-size:23px;letter-spacing:-.03em}.sub{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.45}.source{font-size:12px;color:var(--muted);text-align:right}.source code{color:#d9e9ff}
+.wrap{max-width:1700px;margin:0 auto;display:grid;grid-template-columns:350px minmax(0,1fr);gap:18px;padding:18px}
+.card{background:rgba(17,27,54,.93);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
+.controls{position:sticky;top:86px;align-self:start;max-height:calc(100vh - 104px);overflow:auto;padding:15px}.controls h2{font-size:15px;margin:2px 0 12px}.control{margin:12px 0}.control label{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--muted);margin-bottom:5px}.control label b{color:var(--text)}.control input[type=range]{width:100%}
+.toggleGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.toggleGrid label{font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:12px;padding:8px;display:flex;gap:7px;align-items:center;background:rgba(255,255,255,.03)}
+select,.btn{background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--text);padding:8px 10px}.btn{cursor:pointer;font-size:13px}.btn:hover{border-color:var(--accent)}.btn.primary{background:#143b61;border-color:#2f79b8}.row{display:flex;gap:8px;align-items:center}.nav{display:grid;gap:7px;margin-top:12px}.nav button{text-align:left;background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:12px;color:var(--muted);padding:9px 10px;cursor:pointer}.nav button.active{color:var(--text);border-color:var(--accent);background:rgba(123,220,255,.1)}.nav small{display:block;color:var(--accent);font-size:10px;margin-bottom:2px}.nav span{font-size:12px;font-weight:700}
+.main{display:grid;gap:18px}.chapter{display:none;padding:18px}.chapter.active{display:block}.chapter h2{margin:0 0 8px;font-size:20px;letter-spacing:-.02em}.chapterLead{color:#d9e6fb;line-height:1.58;font-size:14px;margin-bottom:16px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.wide{grid-column:1/-1}.miniCard{background:var(--panel3);border:1px solid var(--line);border-radius:15px;padding:13px}.miniCard h3{margin:0 0 8px;font-size:14px;color:#e5f0ff}.miniCard p{margin:6px 0;color:#cbdaf5;line-height:1.5;font-size:13px}.note{font-size:12px;color:var(--muted);line-height:1.46}.pill{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:4px 8px;font-size:11px;color:var(--muted);background:rgba(255,255,255,.035);margin:2px}.pill.ok{color:#bfffd9;border-color:#2c8058}.pill.warn{color:#ffe0a3;border-color:#7b5a22}.pill.bad{color:#ffbec8;border-color:#7b3240}.pill.hot{color:#dff6ff;border-color:#398bc5;background:rgba(123,220,255,.1)}
+.code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);border:1px solid var(--line);border-radius:14px;padding:12px;color:#dbe8ff;font-size:12px;line-height:1.55;white-space:pre-wrap;overflow:auto}.code b{color:var(--accent)}.code .hit{background:rgba(123,220,255,.12);border:1px solid rgba(123,220,255,.25);border-radius:5px;padding:1px 3px}.formula{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#0b1225;border:1px solid var(--line);border-radius:13px;padding:10px;font-size:12px;line-height:1.6;color:#e1edff;white-space:pre-wrap}.table{width:100%;border-collapse:collapse;font-size:12px}.table th,.table td{border-bottom:1px solid rgba(255,255,255,.08);padding:7px;text-align:left;color:#d8e6ff}.table th{color:var(--muted);font-weight:600}.table td code{color:#eaf4ff;background:rgba(255,255,255,.06);padding:1px 4px;border-radius:5px}.metric{background:#0c1429;border:1px solid var(--line);border-radius:13px;padding:10px}.metric .k{font-size:11px;color:var(--muted)}.metric .v{margin-top:3px;font-weight:800;font-size:17px}.legend{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}.dot{width:11px;height:11px;border-radius:3px;display:inline-block}.bar{height:10px;background:#0b1225;border:1px solid var(--line);border-radius:999px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--ok))}
+.flow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;align-items:stretch}.flow .node{background:#0c1429;border:1px solid var(--line);border-radius:14px;padding:12px;min-height:110px;display:flex;flex-direction:column;justify-content:center;text-align:center}.node.active{border-color:var(--accent);box-shadow:0 0 0 1px rgba(123,220,255,.22)}.node .name{font-weight:850}.node .shape{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted);font-size:12px;margin-top:6px}.node .desc{font-size:11px;color:#bfcee9;margin-top:5px}.arrow{display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:24px}
+.matrixWrap{overflow:auto;background:#0b1225;border:1px solid var(--line);border-radius:14px;padding:10px}.matrixTitle{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px;color:var(--muted);font-size:12px}.matrix{display:grid;gap:2px;justify-content:start}.cell{width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#06101c;position:relative;outline:1px solid rgba(255,255,255,.06)}.cell.small{width:22px;height:22px;font-size:8px}.cell.big{width:31px;height:31px}.cell.label{background:transparent!important;color:var(--muted);outline:none}.cell.masked{background:#151f37!important;color:#65779c!important;outline:1px dashed #53648a}.cell.future{opacity:.38}.cell.partial{outline:2px solid var(--warn)}.cell.active{outline:2px solid #fff;z-index:2;box-shadow:0 0 10px rgba(255,255,255,.35)}.cell.q{background:var(--q)}.cell.k{background:var(--k)}.cell.v{background:var(--v)}.cell.s{background:var(--s)}.cell.p{background:var(--p)}.cell.o{background:var(--o)}.cell.pad{background:#30405f;color:#b9c7e8;outline:1px dashed #667aa5}.svgbox{height:290px;background:#0b1225;border:1px solid var(--line);border-radius:14px;overflow:hidden}.svgbox svg{width:100%;height:100%;display:block}.memCanvas{height:110px;background:#0b1225;border:1px solid var(--line);border-radius:14px;position:relative;overflow:hidden}.memBlock{position:absolute;top:20px;bottom:20px;border-radius:10px;border:1px solid rgba(255,255,255,.45);display:flex;align-items:center;justify-content:center;color:#05101e;font-weight:850;font-size:12px;text-align:center}.memBlock.q{background:var(--q)}.memBlock.k{background:var(--k)}.memBlock.v{background:var(--v)}.memBlock.pad{background:#30405f;color:#c3d2f2;border-style:dashed}.memBlock.alias{background:repeating-linear-gradient(45deg,var(--k),var(--k) 8px,var(--v) 8px,var(--v) 16px)}
+.eqStep{display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px;align-items:start;border:1px solid var(--line);background:#0b1225;border-radius:13px;padding:10px;margin:8px 0}.eqStep .num{width:26px;height:26px;border-radius:50%;background:rgba(123,220,255,.13);border:1px solid var(--accent);display:flex;align-items:center;justify-content:center;font-size:12px;color:#dff6ff}.eqStep .txt{font-size:13px;color:#d8e6ff;line-height:1.48}.highlightBox{border:1px solid rgba(123,220,255,.45);background:rgba(123,220,255,.08);border-radius:14px;padding:12px}.dangerBox{border:1px solid rgba(255,127,145,.5);background:rgba(255,127,145,.07);border-radius:14px;padding:12px}.checkBox{border:1px solid rgba(119,228,170,.45);background:rgba(119,228,170,.07);border-radius:14px;padding:12px}
+.timeline{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}.timeline .t{border:1px solid var(--line);border-radius:13px;background:#0b1225;padding:9px;font-size:12px;color:var(--muted);min-height:92px}.timeline .t.active{border-color:var(--accent);background:rgba(123,220,255,.08);color:var(--text)}.timeline .n{font-size:10px;color:var(--accent);font-weight:800;margin-bottom:3px}.timeline .name{font-weight:800}.timeline .subt{font-size:11px;color:#adbedf;margin-top:4px}.sliderLocal{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.sliderLocal input{width:100%}
+.footer{max-width:1700px;margin:0 auto;padding:0 18px 28px;color:var(--muted);font-size:12px;line-height:1.5}.kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:rgba(255,255,255,.08);border:1px solid var(--line);padding:1px 5px;border-radius:6px;color:#edf7ff}
+@media(max-width:1100px){.wrap{grid-template-columns:1fr}.controls{position:static;max-height:none}.grid2,.grid3,.grid4,.flow,.timeline{grid-template-columns:1fr}.headerInner{grid-template-columns:1fr}.source{text-align:left}.arrow{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="headerInner">
+    <div>
+      <h1>MLX <code>steel_attention.h</code> 전체 이해용 Interactive Workbook</h1>
+      <div class="sub">원본 커널을 11개 코드 블록으로 쪼개어, pointer movement / threadgroup memory / MMA tile / mask / online softmax / V 누적 / store를 따로 조작해보는 워크북입니다. 실제 커널은 더 저수준이지만, 변수명과 제어 흐름은 원본에 맞춰 두었습니다.</div>
+    </div>
+    <div class="source">source snapshot<br><code>ml-explore/mlx @ 8f0e8b1</code></div>
+  </div>
+</header>
+<div class="wrap">
+  <aside class="card controls">
+    <h2>Global controls</h2>
+    <div class="control"><label><span>Chapter</span><b id="chapterName">Overview</b></label><select id="chapterSelect" style="width:100%"></select></div>
+    <div class="row"><button class="btn primary" id="prevChap">← Prev</button><button class="btn primary" id="nextChap">Next →</button></div>
+    <div class="control"><label><span><code>qL</code> query length</span><b id="qLVal"></b></label><input id="qL" type="range" min="16" max="160" step="8" value="72"></div>
+    <div class="control"><label><span><code>kL</code> key/value length</span><b id="kLVal"></b></label><input id="kL" type="range" min="16" max="192" step="8" value="96"></div>
+    <div class="control"><label><span><code>BQ</code> Q rows per block</span><b id="BQVal"></b></label><input id="BQ" type="range" min="8" max="32" step="8" value="16"></div>
+    <div class="control"><label><span><code>BK</code> K/V rows per loop</span><b id="BKVal"></b></label><input id="BK" type="range" min="8" max="32" step="8" value="16"></div>
+    <div class="control"><label><span><code>BD</code> head dim shown</span><b id="BDVal"></b></label><input id="BD" type="range" min="8" max="128" step="8" value="32"></div>
+    <div class="control"><label><span><code>WM*WN</code> simdgroups</span><b id="warpsVal"></b></label><input id="warps" type="range" min="1" max="4" step="1" value="2"></div>
+    <div class="control"><label><span><code>tid.x</code> Q block id</span><b id="tidXVal"></b></label><input id="tidX" type="range" min="0" max="9" step="1" value="1"></div>
+    <div class="control"><label><span><code>tid.y</code> Q head</span><b id="tidYVal"></b></label><input id="tidY" type="range" min="0" max="15" step="1" value="3"></div>
+    <div class="control"><label><span><code>tid.z</code> batch</span><b id="tidZVal"></b></label><input id="tidZ" type="range" min="0" max="3" step="1" value="0"></div>
+    <div class="control"><label><span><code>gqa_factor</code></span><b id="gqaVal"></b></label><input id="gqa" type="range" min="1" max="8" step="1" value="2"></div>
+    <div class="control"><label><span><code>qL_off</code></span><b id="qOffVal"></b></label><input id="qOff" type="range" min="0" max="64" step="1" value="0"></div>
+    <div class="control"><label><span><code>kb</code> current K/V block</span><b id="kbVal"></b></label><input id="kb" type="range" min="0" max="11" step="1" value="1"></div>
+    <div class="control"><label><span><code>simd_lane_id</code></span><b id="laneVal"></b></label><input id="lane" type="range" min="0" max="31" step="1" value="13"></div>
+    <div class="control"><label><span>selected Q row</span><b id="rowVal"></b></label><input id="rowSel" type="range" min="0" max="31" step="1" value="3"></div>
+    <div class="toggleGrid">
+      <label><input type="checkbox" id="alignQ"> <code>align_Q</code></label>
+      <label><input type="checkbox" id="alignK"> <code>align_K</code></label>
+      <label><input type="checkbox" id="causal" checked> <code>do_causal</code></label>
+      <label><input type="checkbox" id="hasMask" checked> <code>has_mask</code></label>
+      <label><input type="checkbox" id="boolMask" checked> bool mask</label>
+      <label><input type="checkbox" id="hasSinks"> <code>has_sinks</code></label>
+    </div>
+    <div class="nav" id="nav"></div>
+  </aside>
+  <main class="main" id="chapters"></main>
+</div>
+<div class="footer">
+  이 HTML은 학습용 toy visualization입니다. 실제 MLX/Metal 코드의 lane mapping, register allocation, bank conflict, scheduling은 하드웨어와 컴파일러에 의해 더 복잡하게 결정됩니다. 그래도 원본의 큰 제어 흐름과 핵심 변수 관계는 그대로 따라갑니다.
+</div>
+<script>
+const chapters = [
+  {id:'overview', title:'00. 전체 지도', short:'Overview'},
+  {id:'constants', title:'01. function constants + tiny ops', short:'constants'},
+  {id:'signature', title:'02. kernel signature + grid', short:'signature'},
+  {id:'pointers', title:'03. pointer movement + GQA', short:'pointers'},
+  {id:'smem', title:'04. threadgroup memory', short:'smem'},
+  {id:'loaders', title:'05. block loaders + safe/unsafe', short:'loaders'},
+  {id:'mma', title:'06. MMA tile layout', short:'MMA'},
+  {id:'qk', title:'07. Q @ K.T score loop', short:'QK'},
+  {id:'mask', title:'08. length / causal / external mask', short:'mask'},
+  {id:'softmax', title:'09. online softmax', short:'softmax'},
+  {id:'value', title:'10. V load + O accumulation', short:'V/O'},
+  {id:'store', title:'11. normalize + store', short:'store'},
+  {id:'pseudo', title:'12. 전체 pseudo-code로 재조립', short:'pseudocode'}
+];
+const qs = id => document.getElementById(id);
+const clamp = (x,a,b)=>Math.max(a,Math.min(b,x));
+const ceilDiv = (a,b)=>Math.floor((a+b-1)/b);
+const fmt = n => Number.isInteger(n) ? String(n) : n.toFixed(4);
+const state = {
+  chapter:0, qL:72, kL:96, BQ:16, BK:16, BD:32, warps:2, tidX:1, tidY:3, tidZ:0, gqa:2, qOff:0, kb:1, lane:13, rowSel:3,
+  alignQ:false, alignK:false, causal:true, hasMask:true, boolMask:true, hasSinks:false
+};
+function bindControls(){
+  const rangeIds=['qL','kL','BQ','BK','BD','warps','tidX','tidY','tidZ','gqa','qOff','kb','lane','rowSel'];
+  rangeIds.forEach(id=>{qs(id).addEventListener('input',e=>{state[id]=parseInt(e.target.value,10); normalizeState(); renderAll();});});
+  ['alignQ','alignK','causal','hasMask','boolMask','hasSinks'].forEach(id=>{qs(id).addEventListener('change',e=>{state[id]=e.target.checked; renderAll();});});
+  qs('chapterSelect').addEventListener('change',e=>setChapter(parseInt(e.target.value,10)));
+  qs('prevChap').onclick=()=>setChapter((state.chapter+chapters.length-1)%chapters.length);
+  qs('nextChap').onclick=()=>setChapter((state.chapter+1)%chapters.length);
+}
+function normalizeState(){
+  const NQ=ceilDiv(state.qL,state.BQ), NK=ceilDiv(state.kL,state.BK);
+  qs('tidX').max=Math.max(0,NQ-1); qs('kb').max=Math.max(0,NK-1); qs('rowSel').max=Math.max(0,state.BQ-1);
+  state.tidX=clamp(state.tidX,0,NQ-1); state.kb=clamp(state.kb,0,NK-1); state.rowSel=clamp(state.rowSel,0,state.BQ-1);
+  qs('tidX').value=state.tidX; qs('kb').value=state.kb; qs('rowSel').value=state.rowSel;
+}
+function metrics(){
+  const NQ=ceilDiv(state.qL,state.BQ), NK=ceilDiv(state.kL,state.BK);
+  const NQ_aligned=Math.floor(state.qL/state.BQ), NK_aligned=Math.floor(state.kL/state.BK);
+  const qL_rem=state.qL%state.BQ || state.BQ, kL_rem=state.kL%state.BK || state.BK;
+  const kvHead=Math.floor(state.tidY/state.gqa);
+  const qStart=state.tidX*state.BQ, qEnd=Math.min(qStart+state.BQ,state.qL)-1;
+  const kStart=state.kb*state.BK, kEnd=Math.min(kStart+state.BK,state.kL)-1;
+  let kb_lim=NK, kb_min_causal=NK;
+  if(state.causal){
+    const qMax=(state.tidX+1)*state.BQ+state.qOff;
+    kb_lim=Math.min(NK,ceilDiv(qMax,state.BK));
+    const qMin=Math.max(0,state.tidX*state.BQ+state.qOff);
+    kb_min_causal=Math.floor(qMin/state.BK);
+  }
+  const sizeofT=2;
+  const padQ=16/sizeofT, padK=16/sizeofT, padV=16/sizeofT;
+  const LDQ=state.BD+padQ, LDK=state.BK+padK, LDV=state.BD+padV;
+  const tgp0=(state.BK+padK)*state.BD, tgp1=state.BK*(state.BD+padV), tgpS=Math.max(tgp0,tgp1);
+  const kFrag=8, TQ=state.BQ/(state.warps*kFrag), TK=state.BK/kFrag, TD=state.BD/kFrag;
+  const laneCoord={x:state.lane%8,y:Math.floor(state.lane/8)%4};
+  const simdGroup=Math.min(state.warps-1,Math.floor(state.lane/32));
+  const tm=kFrag*Math.max(1,TQ)*0;
+  const sm=laneCoord.y, sn=laneCoord.x;
+  return {NQ,NK,NQ_aligned,NK_aligned,qL_rem,kL_rem,kvHead,qStart,qEnd,kStart,kEnd,kb_lim,kb_min_causal,padQ,padK,padV,LDQ,LDK,LDV,tgp0,tgp1,tgpS,kFrag,TQ,TK,TD,laneCoord,tm,sm,sn};
+}
+function syncLabels(){
+  const m=metrics();
+  ['qL','kL','BQ','BK','BD','warps','tidX','tidY','tidZ','gqa','qOff','kb','lane','rowSel'].forEach(id=>qs(id).value=state[id]);
+  qs('qLVal').textContent=state.qL; qs('kLVal').textContent=state.kL; qs('BQVal').textContent=state.BQ; qs('BKVal').textContent=state.BK; qs('BDVal').textContent=state.BD; qs('warpsVal').textContent=state.warps;
+  qs('tidXVal').textContent=state.tidX+' / NQ='+m.NQ; qs('tidYVal').textContent=state.tidY; qs('tidZVal').textContent=state.tidZ; qs('gqaVal').textContent=state.gqa+' → KV head '+m.kvHead;
+  qs('qOffVal').textContent=state.qOff; qs('kbVal').textContent=state.kb+' / NK='+m.NK; qs('laneVal').textContent=state.lane+' → ('+m.laneCoord.y+','+m.laneCoord.x+')'; qs('rowVal').textContent=state.rowSel;
+  ['alignQ','alignK','causal','hasMask','boolMask','hasSinks'].forEach(id=>qs(id).checked=state[id]);
+  qs('chapterName').textContent=chapters[state.chapter].short;
+}
+function initNav(){
+  const sel=qs('chapterSelect'), nav=qs('nav'), holder=qs('chapters');
+  chapters.forEach((c,i)=>{
+    const opt=document.createElement('option'); opt.value=i; opt.textContent=c.title; sel.appendChild(opt);
+    const b=document.createElement('button'); b.innerHTML='<small>'+String(i).padStart(2,'0')+'</small><span>'+c.short+'</span>'; b.onclick=()=>setChapter(i); nav.appendChild(b);
+    const sec=document.createElement('section'); sec.className='card chapter'; sec.id='chap_'+c.id; holder.appendChild(sec);
+  });
+}
+function setChapter(i){state.chapter=i; renderAll(); window.scrollTo({top:0,behavior:'smooth'});}
+function activateChapter(){
+  chapters.forEach((c,i)=>{qs('chap_'+c.id).classList.toggle('active',i===state.chapter); qs('nav').children[i].classList.toggle('active',i===state.chapter);});
+  qs('chapterSelect').value=state.chapter;
+}
+function lineCard(title, pseudo, why){return `<div class="miniCard"><h3>${title}</h3><div class="code">${pseudo}</div>${why?`<p>${why}</p>`:''}</div>`;}
+function metricCards(items){return `<div class="grid4">${items.map(([k,v,cls=''])=>`<div class="metric ${cls}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('')}</div>`;}
+function cellHtml(cls,txt,title=''){return `<div class="cell ${cls}" title="${title}">${txt}</div>`;}
+function matrix(rows,cols,fn,small=false){let html=`<div class="matrix" style="grid-template-columns: repeat(${cols}, ${small?'22px':'26px'});">`; for(let r=0;r<rows;r++){for(let c=0;c<cols;c++){html+=fn(r,c);} } return html+'</div>';}
+function renderOverview(){
+  const m=metrics();
+  qs('chap_overview').innerHTML=`<h2>00. 전체 지도</h2>
+  <div class="chapterLead">이 파일은 하나의 Metal attention kernel입니다. 큰 그림은 <span class="kbd">Q block 하나 고정</span> → <span class="kbd">K/V block들을 kb loop로 순회</span> → <span class="kbd">online softmax로 O numerator 누적</span> → <span class="kbd">마지막에 normalize/store</span>입니다.</div>
+  ${metricCards([['NQ query blocks',m.NQ],['NK key/value blocks',m.NK],['current Q rows',m.qStart+'..'+m.qEnd],['current K rows',m.kStart+'..'+m.kEnd]])}
+  <div class="miniCard wide" style="margin-top:14px"><h3>한 줄 mental model</h3><div class="formula">for each threadgroup (tid.x = Q block, tid.y = Q head, tid.z = batch):\n  Qs = load Q[batch, q_head, Q_block, :] once\n  for kb in visible K/V blocks:\n    Ks = load K[batch, kv_head, kb, :] into shared memory, transposed\n    S  = Qs @ Ks.T\n    S  = scale + masks\n    P  = online_softmax_update(S, max_score, sum_score)\n    Vs = load V[batch, kv_head, kb, :] reusing the same shared memory\n    O_numer += P @ Vs\n  O = O_numer / sum_score</div></div>
+  <div class="grid2" style="margin-top:14px">
+    <div class="miniCard"><h3>Pipeline</h3>${flowHtml(['base pointer','Q_smem','K_smem','Stile','V_smem','Otile'],2)}</div>
+    <div class="miniCard"><h3>읽는 순서</h3>
+      <div class="eqStep"><div class="num">1</div><div class="txt">템플릿/상수: 어떤 kernel variant인지 결정</div></div>
+      <div class="eqStep"><div class="num">2</div><div class="txt">threadgroup id로 Q/K/V/O/mask base pointer 이동</div></div>
+      <div class="eqStep"><div class="num">3</div><div class="txt">threadgroup memory + BlockLoader + MMA tile 준비</div></div>
+      <div class="eqStep"><div class="num">4</div><div class="txt">Q를 한 번 로드하고, K/V loop에서 score-softmax-output을 누적</div></div>
+      <div class="eqStep"><div class="num">5</div><div class="txt">online softmax의 numerator를 denominator로 나누고 O에 저장</div></div>
+    </div>
+  </div>`;
+}
+function flowHtml(names,active){return `<div class="flow">${names.map((n,i)=>`<div class="node ${i===active?'active':''}"><div class="name">${n}</div><div class="shape">${flowShape(n)}</div><div class="desc">${flowDesc(n)}</div></div>${i<names.length-1?'<div class="arrow">→</div>':''}`).join('')}</div>`;}
+function flowShape(n){const m=metrics();return ({'base pointer':'B,H,L,D','Q_smem':`${state.BQ} x (${state.BD}+pad)`, 'K_smem':`(${state.BD}) x (${state.BK}+pad)`, 'Stile':`TQ x TK = ${fmt(m.TQ)} x ${m.TK}`, 'V_smem':`${state.BK} x (${state.BD}+pad)`, 'Otile':`TQ x TD = ${fmt(m.TQ)} x ${m.TD}`})[n]||'';}
+function flowDesc(n){return ({'base pointer':'tid chooses batch/head/block','Q_smem':'loaded once per Q block','K_smem':'current kb, transposed','Stile':'score fragments','V_smem':'aliases K memory','Otile':'softmax numerator'})[n]||'';}
+function renderConstants(){
+  qs('chap_constants').innerHTML=`<h2>01. function constants + tiny ops</h2>
+  <div class="chapterLead"><code>align_Q</code>, <code>align_K</code>, <code>has_mask</code>, <code>do_causal</code>, <code>has_sinks</code>는 runtime if가 아니라 Metal function constant입니다. 즉 pipeline specialization 시점에 가지치기될 수 있는 compile-time switch처럼 생각하면 됩니다.</div>
+  <div class="grid2">
+    ${lineCard('Source block: constants',`constant bool align_Q   [[function_constant(200)]];\nconstant bool align_K   [[function_constant(201)]];\nconstant bool has_mask  [[function_constant(300)]];\nconstant bool do_causal [[function_constant(301)]];\nconstant bool has_sinks [[function_constant(302)]];`,'체크박스를 바꾸면 아래 가지가 어떻게 compile-time으로 살아남는지 확인할 수 있습니다.')}
+    <div class="miniCard"><h3>현재 variant</h3>
+      <div class="legend">
+      ${boolPill('align_Q',state.alignQ)}${boolPill('align_K',state.alignK)}${boolPill('has_mask',state.hasMask)}${boolPill('do_causal',state.causal)}${boolPill('has_sinks',state.hasSinks)}
+      </div>
+      <div class="formula">${state.alignQ?'Q last-block safe path removed':'Q may use load_safe/store_safe on last block'}\n${state.alignK?'K/V last-block safe path removed':'K/V may use load_safe on last block'}\n${state.causal?'causal branch active: kb_lim and per-element future mask':'causal branch compiled out'}\n${state.hasMask?'external mask branch active':'external mask branch compiled out'}\n${state.hasSinks?'attention sink initializes max/sum':'sink branch compiled out'}</div>
+    </div>
+  </div>
+  <div class="grid3" style="margin-top:14px">
+    ${opCard('MaxOp','row_reduce<MaxOp>','new_max[row] = max(old_max, max(S[row,*]))')}
+    ${opCard('SumOp','row_reduce<SumOp>','sum_score_tmp[row] = sum(exp_score[row,*])')}
+    ${opCard('ExpSubOp','row_bin_op<ExpSubOp>','S = exp2(S - new_max[row])')}
+    ${opCard('MulOp','row_bin_op<MulOp>','Otile *= factor[row]')}
+    ${opCard('DivOp','row_bin_op<DivOp>','Otile /= sum_score[row]')}
+    <div class="miniCard"><h3>왜 exp2?</h3><p>커널은 <code>fast::exp2</code>를 쓰므로 scale을 <code>params-&gt;scale * M_LOG2E_F</code>로 바꿉니다. 그래서 <code>exp(x * scale)</code> 대신 <code>exp2(x * scale * log2(e))</code>가 됩니다.</p></div>
+  </div>`;
+}
+function boolPill(name,val){return `<span class="pill ${val?'ok':'bad'}"><span>${name}</span><b>${val?'true':'false'}</b></span>`;}
+function opCard(name,where,desc){return `<div class="miniCard"><h3>${name}</h3><div class="pill hot">${where}</div><p>${desc}</p></div>`;}
+function renderSignature(){
+  const m=metrics();
+  qs('chap_signature').innerHTML=`<h2>02. kernel signature + grid</h2>
+  <div class="chapterLead">kernel 인자는 Q/K/V/O buffer, shape/stride params, optional mask/sinks, 그리고 Metal thread indices입니다. 여기서 <code>tid</code>가 threadgroup-level work assignment의 핵심입니다.</div>
+  <div class="grid2">
+    ${lineCard('Source block: kernel header',`template &lt;typename T, int BQ, int BK, int BD, int WM, int WN, typename MaskType, typename AccumType&gt;\n[[kernel, max_total_threads_per_threadgroup(WM * WN * 32)]]\nvoid attention(Q, K, V, O, params, mask_params, mask, sinks,\n               simd_lane_id, simd_group_id, tid, lid)`, '한 threadgroup에는 <code>WM*WN</code>개의 simdgroup이 있고, simdgroup당 32 lanes로 계산합니다.')}
+    <div class="miniCard"><h3>현재 launch interpretation</h3>${metricCards([['threads / tgp',state.warps*32],['simdgroups',state.warps],['Q block tid.x',state.tidX],['head tid.y',state.tidY]])}<p><code>tid.z</code>는 batch, <code>tid.y</code>는 Q head, <code>tid.x</code>는 Q sequence block입니다.</p></div>
+  </div>
+  <div class="grid2" style="margin-top:14px">
+    <div class="miniCard"><h3>Threadgroup grid</h3><div id="gridSvg" class="svgbox">${gridSvg()}</div></div>
+    <div class="miniCard"><h3>현재 threadgroup이 담당하는 output 영역</h3><div class="formula">batch = tid.z = ${state.tidZ}\nQ head = tid.y = ${state.tidY}\nKV head = floor(tid.y / gqa_factor) = ${m.kvHead}\nQ rows = [tid.x*BQ, min((tid.x+1)*BQ, qL)) = [${m.qStart}, ${m.qEnd+1})\nO tile shape ≈ BQ x BD = ${state.BQ} x ${state.BD}</div></div>
+  </div>`;
+}
+function gridSvg(){
+ const m=metrics(); const cols=m.NQ, rows=Math.min(8,Math.max(1,Math.ceil((state.tidY+1)/1))); const W=700,H=290, pad=35, cw=(W-pad*2)/Math.max(cols,1), ch=28; let s=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+ s+=`<rect x="0" y="0" width="${W}" height="${H}" fill="#0b1225"/>`;
+ for(let h=0;h<=Math.max(state.tidY+1,4);h++){
+  for(let x=0;x<cols;x++){
+   const xx=pad+x*cw+2, yy=pad+h*(ch+4); const active=(x===state.tidX&&h===state.tidY);
+   s+=`<rect x="${xx}" y="${yy}" width="${Math.max(18,cw-4)}" height="${ch}" rx="6" fill="${active?'#7bdcff':'#172342'}" stroke="${active?'#ffffff':'#2a3d68'}"/>`;
+   if(active)s+=`<text x="${xx+6}" y="${yy+18}" font-size="11" fill="#06101c" font-weight="800">tid=(${x},${h},${state.tidZ})</text>`;
+  }
+  s+=`<text x="6" y="${pad+h*(ch+4)+18}" font-size="11" fill="#9fb2d6">head ${h}</text>`;
+ }
+ s+=`<text x="${pad}" y="20" font-size="12" fill="#9fb2d6">x-axis = Q blocks, y-axis = Q heads</text>`;
+ return s+'</svg>';
+}
+function renderPointers(){
+ const m=metrics();
+ qs('chap_pointers').innerHTML=`<h2>03. pointer movement + GQA</h2>
+ <div class="chapterLead">커널 시작부는 Q/K/V/O/mask 포인터를 현재 threadgroup이 맡은 batch/head/sequence 위치로 이동시킵니다. GQA에서는 여러 Q head가 하나의 K/V head를 공유하므로 <code>kv_head_idx = tid.y / gqa_factor</code>가 들어갑니다.</div>
+ <div class="grid2">
+ ${lineCard('Source block: base pointer shift',`Q += B*Q_strides[0] + Hq*Q_strides[1] + Q_block*BQ*Q_strides[2]\nK += B*K_strides[0] + Hkv*K_strides[1]\nV += B*V_strides[0] + Hkv*V_strides[1]\nO += B*O_strides[0] + Hq*O_strides[1] + Q_block*BQ*O_strides[2]\nmask += B*M_strides[0] + Hq*M_strides[1]`, 'K/V에는 query block offset이 아직 없습니다. K/V block offset은 loader가 <code>loader_k.next()</code>, <code>loader_v.next()</code>로 loop마다 이동합니다.')}
+ <div class="miniCard"><h3>현재 계산</h3><div class="formula">tid = (${state.tidX}, ${state.tidY}, ${state.tidZ})\nkv_head_idx = floor(${state.tidY} / ${state.gqa}) = ${m.kvHead}\nQ base sequence offset = tid.x * BQ = ${state.tidX} * ${state.BQ} = ${m.qStart}\nO base sequence offset = same as Q\ncurrent K block offset inside loop = kb * BK = ${state.kb} * ${state.BK} = ${m.kStart}</div></div>
+ </div>
+ <div class="grid2" style="margin-top:14px">
+  <div class="miniCard"><h3>GQA head mapping</h3>${gqaMatrix()}</div>
+  <div class="miniCard"><h3>Q/O block selection</h3>${seqStrip('Q/O sequence',state.qL,state.BQ,state.tidX,'q')}</div>
+ </div>`;
+}
+function gqaMatrix(){let rows=2, cols=16; let h='<div class="matrixWrap"><div class="matrixTitle"><span>top: Q head, bottom: KV head</span><span>gqa_factor='+state.gqa+'</span></div>'; h+=`<div class="matrix" style="grid-template-columns:repeat(${cols},26px);">`; for(let c=0;c<cols;c++)h+=cellHtml(c===state.tidY?'q active':'q',c,'Q head '+c); for(let c=0;c<cols;c++){const kv=Math.floor(c/state.gqa);h+=cellHtml(c===state.tidY?'k active':'k',kv,'KV head '+kv);} return h+'</div></div>';}
+function seqStrip(title,L,B,activeBlock,cls){const blocks=ceilDiv(L,B);let h=`<div class="matrixWrap"><div class="matrixTitle"><span>${title}</span><span>L=${L}, block=${B}</span></div><div class="matrix" style="grid-template-columns:repeat(${blocks}, minmax(42px,1fr));gap:5px">`; for(let b=0;b<blocks;b++){const start=b*B,end=Math.min(start+B,L); h+=`<div class="cell ${cls} ${b===activeBlock?'active':''}" style="width:100%;height:42px" title="${start}..${end-1}">${start}-${end-1}</div>`;} return h+'</div></div>';}
+function renderSmem(){
+ const m=metrics();
+ qs('chap_smem').innerHTML=`<h2>04. threadgroup memory</h2>
+ <div class="chapterLead">Q는 모든 <code>kb</code>에 재사용되므로 <code>Q_smem</code>에 따로 보관합니다. K와 V는 같은 loop 안에서 순서대로 쓰이고 동시에 필요하지 않으므로 하나의 <code>KV_smem</code>을 <code>Ks</code>/<code>Vs</code>로 alias합니다.</div>
+ <div class="grid2">
+ ${lineCard('Source block: shared memory sizing',`padQ = 16 / sizeof(T)\nLDQ_tgp = BD + padQ\nLDK_tgp = BK + padK   // K is stored transposed\nLDV_tgp = BD + padV\nQ_smem  = BQ * (BD + padQ)\nKV_smem = max((BK + padK)*BD, BK*(BD + padV))\nKs = KV_smem; Vs = KV_smem;`, 'padding은 shared memory stride를 살짝 늘려 alignment/bank conflict 문제를 줄이려는 전형적인 패턴입니다.')}
+ <div class="miniCard"><h3>현재 sizes, assuming sizeof(T)=2</h3>${metricCards([['padQ/K/V',m.padQ],['Q_smem elems',state.BQ*(state.BD+m.padQ)],['K layout elems',m.tgp0],['V layout elems',m.tgp1]])}<div class="formula">LDQ_tgp=${m.LDQ}, LDK_tgp=${m.LDK}, LDV_tgp=${m.LDV}\nKV_smem elems = max(${m.tgp0}, ${m.tgp1}) = ${m.tgpS}</div></div>
+ </div>
+ <div class="grid2" style="margin-top:14px">
+  <div class="miniCard"><h3>Memory blocks</h3>${memoryViz()}</div>
+  <div class="miniCard"><h3>왜 K만 transposed?</h3><p><code>S = Q @ K.T</code>를 MMA tile로 먹이기 쉽게 K를 threadgroup memory에 transpose layout으로 적재합니다. 그래서 K loader의 destination stride가 <code>row=1, col=LDK_tgp</code>입니다. V는 나중에 <code>P @ V</code>에서 row-major에 가까운 형태로 사용합니다.</p><div class="highlightBox note">중요: K를 계산한 뒤에는 <code>Stile</code>이 register에 있으므로, 같은 <code>KV_smem</code>을 V 로드로 덮어써도 됩니다.</div></div>
+ </div>`;
+}
+function memoryViz(){
+ const m=metrics(); const total=state.BQ*(state.BD+m.padQ)+m.tgpS; const qPct=100*(state.BQ*(state.BD+m.padQ))/total; const kvPct=100*m.tgpS/total;
+ return `<div class="memCanvas"><div class="memBlock q" style="left:3%;width:${Math.max(25,qPct*.9)}%">Q_smem<br>${state.BQ}x${state.BD}+pad</div><div class="memBlock alias" style="left:${5+Math.max(25,qPct*.9)}%;width:${Math.max(25,kvPct*.83)}%">KV_smem<br>Ks or Vs</div></div><div class="note" style="margin-top:8px">K phase: KV_smem means <b>Ks</b>. V phase: same address means <b>Vs</b>.</div>`;
+}
+function renderLoaders(){
+ const m=metrics(); const qLast=state.tidX===m.NQ_aligned && !state.alignQ && state.qL%state.BQ!==0; const kLast=state.kb===m.NK_aligned && !state.alignK && state.kL%state.BK!==0;
+ qs('chap_loaders').innerHTML=`<h2>05. block loaders + safe/unsafe</h2>
+ <div class="chapterLead"><code>BlockLoaderT</code>는 global memory에서 rectangular block을 threadgroup memory로 가져오는 helper입니다. aligned full block이면 <code>load_unsafe</code>, 마지막 partial block이면 <code>load_safe</code>를 씁니다.</div>
+ <div class="grid3">
+ ${lineCard('QBlockLoader',`BROWS=BQ, BCOLS=BD\ndst row stride = LDQ_tgp\ndst col stride = 1\nreduction_dim = 1`, 'Q는 BQ x BD를 row-major처럼 Q_smem에 저장합니다.')}
+ ${lineCard('KBlockLoader',`BROWS=BK, BCOLS=BD\ndst row stride = 1\ndst col stride = LDK_tgp\nreduction_dim = 0`, 'K는 <code>Q @ K.T</code>를 위해 transposed layout으로 저장합니다.')}
+ ${lineCard('VBlockLoader',`BROWS=BK, BCOLS=BD\ndst row stride = LDV_tgp\ndst col stride = 1\nreduction_dim = 0`, 'V는 <code>P @ V</code>를 위해 BK x BD layout으로 저장합니다.')}
+ </div>
+ <div class="grid2" style="margin-top:14px">
+  <div class="miniCard"><h3>현재 safe/unsafe branch</h3><div class="formula">Q block: tid.x=${state.tidX}, NQ_aligned=${m.NQ_aligned}, qL_rem=${m.qL_rem}\n→ ${qLast?'loader_q.load_safe(short2(BD, qL_rem))':'loader_q.load_unsafe() or align_Q-specialized'}\n\nK/V block: kb=${state.kb}, NK_aligned=${m.NK_aligned}, kL_rem=${m.kL_rem}\n→ ${kLast?'loader_k/v.load_safe(short2(BD, kL_rem))':'loader_k/v.load_unsafe() or align_K-specialized'}</div>${qLast||kLast?'<div class="dangerBox note">partial block에서는 global memory 밖을 읽으면 안 되므로 safe loader와 후속 mask/store가 필요합니다.</div>':'<div class="checkBox note">현재 선택은 full block이라 unsafe load path가 가능합니다.</div>'}</div>
+  <div class="miniCard"><h3>Partial block visualization</h3>${loaderGrid()}</div>
+ </div>`;
+}
+function loaderGrid(){const m=metrics(); const rows=state.BK, cols=Math.min(state.BD,32); return `<div class="matrixWrap"><div class="matrixTitle"><span>current K/V block valid rows</span><span>kb=${state.kb}</span></div>${matrix(Math.min(rows,16),Math.min(cols,16),(r,c)=>{const global=state.kb*state.BK+r; const valid=global<state.kL; return cellHtml(valid?'k':'masked',valid?'':'x',`k=${global}`);},true)}</div>`;}
+function renderMma(){
+ const m=metrics();
+ const validTQ=Number.isInteger(m.TQ)&&m.TQ===1; const validTK=Number.isInteger(m.TK); const validTD=Number.isInteger(m.TD);
+ qs('chap_mma').innerHTML=`<h2>06. MMA tile layout</h2>
+ <div class="chapterLead">이 커널은 8x8 MMA fragment를 기본 단위로 씁니다. <code>TQ</code>, <code>TK</code>, <code>TD</code>는 각각 Q-seq, K-seq, head-dim 방향으로 몇 개의 8x8 fragment를 묶는지 뜻합니다.</div>
+ <div class="grid2">
+ ${lineCard('Source block: tile types',`kFragSize = 8\nTQ = BQ / ((WM*WN) * 8)\nTK = BK / 8\nTD = BD / 8\nQtile : TQ x 1\nKtile : 1  x TK\nStile : TQ x TK\nVtile : 1  x 1\nOtile : TQ x TD`, '<code>static_assert(TQ == 1)</code> 때문에 현재 upstream kernel은 simdgroup 하나가 8 Q rows를 담당하는 전제를 강하게 둡니다.')}
+ <div class="miniCard"><h3>현재 tile numbers</h3>${metricCards([['TQ',fmt(m.TQ),validTQ?'':'dangerBox'],['TK',fmt(m.TK),validTK?'':'dangerBox'],['TD',fmt(m.TD),validTD?'':'dangerBox'],['kFragSize',8]])}<div class="note" style="margin-top:8px">${validTQ?'TQ==1 OK':'TQ가 1이 아니면 원본 static_assert에 걸리는 구성입니다. BQ와 WM*WN을 조정하세요.'}</div></div>
+ </div>
+ <div class="grid2" style="margin-top:14px">
+  <div class="miniCard"><h3>Lane coordinate intuition</h3>${laneGrid()}</div>
+  <div class="miniCard"><h3>offset formulas</h3><div class="formula">simd_coord = MMAFrag_acc_t::get_coord(simd_lane_id)\nsm = simd_coord.y = ${m.sm}\nsn = simd_coord.x = ${m.sn}\ntm = 8 * TQ * simd_group_id\nQs_offset = (tm + sm) * LDQ_tgp + sn\nKs_offset = sm * LDK_tgp + sn\nVs_offset = sm * LDV_tgp + sn\n\nwith current LDQ=${m.LDQ}, LDK=${m.LDK}, LDV=${m.LDV}</div></div>
+ </div>`;
+}
+function laneGrid(){let h=`<div class="matrixWrap"><div class="matrixTitle"><span>toy 8x4 lane coordinate map</span><span>lane=${state.lane}</span></div><div class="matrix" style="grid-template-columns:repeat(8,31px);">`; for(let y=0;y<4;y++){for(let x=0;x<8;x++){const lane=y*8+x;h+=cellHtml(lane===state.lane?'s big active':'s big',lane,`sm=${y}, sn=${x}`);}} return h+'</div></div>';}
+function renderQK(){
+ const m=metrics();
+ qs('chap_qk').innerHTML=`<h2>07. Q @ K.T score loop</h2>
+ <div class="chapterLead">현재 <code>kb</code>의 K block을 <code>Ks</code>에 올린 뒤, head dimension을 8-column fragment 단위인 <code>dd</code>로 훑으며 <code>Stile += Qtile @ Ktile</code>을 수행합니다.</div>
+ <div class="grid2">
+ ${lineCard('Source block: score MMA',`Stile.clear()\nfor dd in 0 .. TD-1:\n  Qtile.load(&Qs[Qs_offset + dd * 8])\n  Ktile.load(&Ks[Ks_offset + dd * 8 * LDK_tgp])\n  tile_matmad(Stile, Qtile, Ktile, Stile)\nfor each elem in Stile:\n  elem *= params-&gt;scale * M_LOG2E_F`, 'K는 이미 transposed layout이므로 Ktile load가 score matrix의 column 방향으로 잘 맞습니다.')}
+ <div class="miniCard"><h3>Dimension flow</h3>${flowHtml(['Q_smem','K_smem','Stile'],2)}<div class="formula">Q fragment: 8 x 8 over rows/head_dim\nK fragment: 8 x 8 over head_dim/K_rows\nStile fragment: 8 x 8 over Q_rows/K_rows</div></div>
+ </div>
+ <div class="grid3" style="margin-top:14px">
+  <div class="miniCard"><h3>Q tile</h3>${toyMatrix('Q',8,Math.min(8,state.BD),'q')}</div>
+  <div class="miniCard"><h3>K tile transposed</h3>${toyMatrix('K.T',Math.min(8,state.BD),8,'k')}</div>
+  <div class="miniCard"><h3>Stile = scores</h3>${scoreMatrix()}</div>
+ </div>`;
+}
+function toyMatrix(title,rows,cols,cls){return `<div class="matrixWrap"><div class="matrixTitle"><span>${title}</span><span>${rows}x${cols}</span></div>${matrix(rows,cols,(r,c)=>cellHtml(cls,(r+c)%9,''),true)}</div>`;}
+function scoreVal(q,k){return Math.sin((q+1)*0.7+(k+2)*0.31)*2 + Math.cos((q-k)*0.22);}
+function scoreMatrix(){const rows=Math.min(8,state.BQ), cols=Math.min(8,state.BK); return `<div class="matrixWrap"><div class="matrixTitle"><span>toy score values</span><span>scaled log2 units</span></div>${matrix(rows,cols,(r,c)=>{const val=scoreVal(state.tidX*state.BQ+r,state.kb*state.BK+c); return cellHtml('s',val.toFixed(1),'toy score');},true)}</div>`;}
+function renderMask(){
+ const m=metrics();
+ qs('chap_mask').innerHTML=`<h2>08. length / causal / external mask</h2>
+ <div class="chapterLead">score가 만들어진 뒤 세 종류의 mask가 적용됩니다. 1) 마지막 K block의 length mask, 2) causal future mask, 3) optional external mask입니다. mask된 값은 사실상 <code>-inf</code>가 되어 softmax에서 0이 됩니다.</div>
+ <div class="grid2">
+ ${lineCard('Source block: masks',`if last K block is partial:\n  if col >= kL_rem: S = -inf\n\nif do_causal and kb >= kb_min_causal:\n  if row_pos < col_pos: S = -inf\n\nif has_mask:\n  if MaskType == bool: false → -inf\n  else: S += mask * M_LOG2E_F`, 'additive mask도 exp2 기준으로 맞추기 위해 <code>M_LOG2E_F</code>를 곱합니다.')}
+ <div class="miniCard"><h3>causal loop pruning</h3><div class="formula">q_max = (tid.x + 1) * BQ + qL_off = ${(state.tidX+1)*state.BQ+state.qOff}\nkb_lim = min(NK, ceil(q_max/BK)) = ${m.kb_lim}\nq_min = max(0, tid.x*BQ + qL_off) = ${Math.max(0,state.tidX*state.BQ+state.qOff)}\nkb_min_causal = floor(q_min/BK) = ${m.kb_min_causal}\n\ncurrent kb=${state.kb}: ${state.causal && state.kb>=m.kb_min_causal?'needs per-element causal mask':'no per-element causal mask needed'}</div></div>
+ </div>
+ <div class="grid2" style="margin-top:14px">
+  <div class="miniCard"><h3>Current score mask grid</h3>${maskGrid()}</div>
+  <div class="miniCard"><h3>Mask legend</h3><div class="legend"><span class="pill ok">valid score</span><span class="pill bad">-inf by length/causal/bool</span><span class="pill warn">additive bias</span></div><p>선택한 <code>rowSel</code>과 <code>kb</code>를 바꿔보면 causal에서 어떤 block은 통째로 skip되고, 어떤 block은 element별 mask가 필요한지 보입니다.</p><div class="formula">row_pos = tid.x*BQ + qL_off + local_q\ncol_pos = kb*BK + local_k\ncausal condition: row_pos &lt; col_pos</div></div>
+ </div>`;
+}
+function externalMaskAllowed(q,k){return ((q+k)%7)!==0;}
+function maskGrid(){const m=metrics(); const rows=Math.min(state.BQ,16), cols=Math.min(state.BK,16); return `<div class="matrixWrap"><div class="matrixTitle"><span>rows=current Q block, cols=current K block</span><span>kb=${state.kb}</span></div>${matrix(rows,cols,(r,c)=>{const qAbs=state.tidX*state.BQ+state.qOff+r; const kAbs=state.kb*state.BK+c; let masked=false, reason=''; if(kAbs>=state.kL){masked=true;reason='length';} if(state.causal && qAbs<kAbs){masked=true;reason='causal';} if(state.hasMask && state.boolMask && !externalMaskAllowed(qAbs,kAbs)){masked=true;reason='external bool';} let cls=masked?'masked':'s'; if(r===state.rowSel) cls+=' active'; return cellHtml(cls,masked?'×':'✓',`q=${qAbs}, k=${kAbs}, ${reason||'valid'}`);},true)}</div>`;}
+function renderSoftmax(){
+ const m=metrics(); const data=softmaxData();
+ qs('chap_softmax').innerHTML=`<h2>09. online softmax</h2>
+ <div class="chapterLead">전체 K 길이에 대한 softmax를 한 번에 만들지 않고, K block을 하나씩 보면서 numerically stable하게 <code>max_score</code>, <code>sum_score</code>, <code>Otile</code>을 갱신합니다. 이것이 FlashAttention류의 핵심입니다.</div>
+ <div class="grid2">
+ ${lineCard('Source block: online softmax',`new_max = max_score\nrow_reduce&lt;MaxOp&gt;(Stile, new_max)\nStile = exp2(Stile - new_max)\nfactor = exp2(max_score - new_max)\nmax_score = new_max\nsum_score = sum_score * factor + row_sum(Stile)\nOtile = Otile * factor`, '이 시점의 <code>Stile</code>은 softmax probability가 아니라, 새 max 기준의 unnormalized exp 값입니다.')}
+ <div class="miniCard"><h3>Selected row state</h3><div class="formula">selected absolute q row = ${state.tidX*state.BQ+state.qOff+state.rowSel}\ninitial max_score = ${state.hasSinks?'sink * log2(e)':'-inf'}\ninitial sum_score = ${state.hasSinks?'1':'0'}\nprocessed blocks shown = 0..${Math.min(state.kb,m.kb_lim-1)}</div>${softmaxTable(data)}</div>
+ </div>
+ <div class="grid2" style="margin-top:14px">
+  <div class="miniCard"><h3>Per-block evolution</h3>${softmaxBars(data)}</div>
+  <div class="miniCard"><h3>왜 이전 O를 factor로 곱나?</h3><p>이전 block까지의 numerator는 <code>old_max</code> 기준으로 저장되어 있습니다. 새 block에서 더 큰 score가 나오면 기준 max가 <code>new_max</code>로 바뀌므로, 이전 numerator와 denominator를 <code>exp2(old_max - new_max)</code>만큼 줄여야 같은 기준이 됩니다.</p><div class="formula">old numerator = Σ exp2(s_old - old_max) V\nnew basis     = new_max\nconverted old = old numerator * exp2(old_max - new_max)</div></div>
+ </div>`;
+}
+function softmaxData(){const m=metrics(); const q=state.tidX*state.BQ+state.qOff+state.rowSel; let maxScore=state.hasSinks?0.2*Math.LOG2E:-1e9, sum=state.hasSinks?1:0; const arr=[]; const upto=Math.min(state.kb,m.kb_lim-1); for(let kb=0;kb<=upto;kb++){let vals=[]; for(let c=0;c<state.BK;c++){const k=kb*state.BK+c; let masked=(k>=state.kL)||(state.causal&&q<k)||(state.hasMask&&state.boolMask&&!externalMaskAllowed(q,k)); if(!masked) vals.push(scoreVal(q,k)*0.35);}
+ const blockMax=vals.length?Math.max(...vals):-1e9; const newMax=Math.max(maxScore,blockMax); const factor=maxScore<-1e8?0:Math.pow(2,maxScore-newMax); const exps=vals.map(v=>Math.pow(2,v-newMax)); const sumTmp=exps.reduce((a,b)=>a+b,0); const newSum=sum*factor+sumTmp; arr.push({kb,valid:vals.length,blockMax,newMax,factor,sumTmp,oldSum:sum,newSum}); maxScore=newMax; sum=newSum;} return arr;}
+function softmaxTable(data){return `<table class="table"><thead><tr><th>kb</th><th>valid elems</th><th>new_max</th><th>factor</th><th>sum_score</th></tr></thead><tbody>${data.map(d=>`<tr><td>${d.kb}</td><td>${d.valid}</td><td>${d.blockMax<-1e8?'-inf':d.newMax.toFixed(3)}</td><td>${d.factor.toFixed(3)}</td><td>${d.newSum.toFixed(3)}</td></tr>`).join('')}</tbody></table>`;}
+function softmaxBars(data){if(!data.length)return '<p class="note">No visible blocks.</p>'; const maxSum=Math.max(...data.map(d=>d.newSum),1); return data.map(d=>`<div style="margin:9px 0"><div class="matrixTitle"><span>kb ${d.kb}</span><span>sum=${d.newSum.toFixed(3)}</span></div><div class="bar"><i style="width:${100*d.newSum/maxSum}%"></i></div></div>`).join('');}
+function renderValue(){
+ const m=metrics();
+ qs('chap_value').innerHTML=`<h2>10. V load + O accumulation</h2>
+ <div class="chapterLead">softmax 변환 후 <code>Stile</code>은 현재 K block에 대한 unnormalized probability tile입니다. 이제 같은 <code>KV_smem</code>을 V block으로 덮어쓴 뒤, <code>Otile += Stile @ Vtile</code>을 수행합니다.</div>
+ <div class="grid2">
+ ${lineCard('Source block: V and O',`load V block into Vs  // same KV_smem as Ks\nfor iq in TQ:\n  for id in TD:\n    for ik in TK:\n      Vtile.load(&Vs[Vs_offset + kk*LDV_tgp + dd])\n      Otile = mma(Stile[iq,ik], Vtile, Otile)\nloader_k.next(); loader_v.next();`, '이 accumulation은 아직 normalize 전입니다. denominator는 <code>sum_score</code>에 따로 보관됩니다.')}
+ <div class="miniCard"><h3>Dimension flow</h3><div class="formula">Stile: [TQ x TK] fragments = Q rows x K rows\nVtile: one 8x8 fragment = K rows x D cols\nOtile: [TQ x TD] fragments = Q rows x D cols\n\nLoop ik sweeps K fragments.\nLoop id sweeps output head-dim fragments.</div></div>
+ </div>
+ <div class="grid3" style="margin-top:14px">
+  <div class="miniCard"><h3>P tile in Stile</h3>${toyMatrix('P',8,Math.min(8,state.BK),'p')}</div>
+  <div class="miniCard"><h3>Vtile</h3>${toyMatrix('V',Math.min(8,state.BK),8,'v')}</div>
+  <div class="miniCard"><h3>Otile numerator</h3>${toyMatrix('O numerator',8,8,'o')}</div>
+ </div>
+ <div class="miniCard wide" style="margin-top:14px"><h3>KV_smem alias timeline</h3>${kvTimeline()}</div>`;
+}
+function kvTimeline(){return `<div class="timeline"><div class="t active"><div class="n">A</div><div class="name">load K</div><div class="subt">KV_smem = Ks</div></div><div class="t active"><div class="n">B</div><div class="name">QK MMA</div><div class="subt">Stile computed</div></div><div class="t"><div class="n">C</div><div class="name">load V</div><div class="subt">KV_smem overwritten</div></div><div class="t"><div class="n">D</div><div class="name">P@V MMA</div><div class="subt">Otile += ...</div></div><div class="t"><div class="n">E</div><div class="name">next</div><div class="subt">loader_k/v.next()</div></div></div>`;}
+function renderStore(){
+ const m=metrics(); const lastQ=state.tidX===m.NQ_aligned && !state.alignQ && state.qL%state.BQ!==0;
+ qs('chap_store').innerHTML=`<h2>11. normalize + store</h2>
+ <div class="chapterLead">loop가 끝나면 <code>Otile</code>에는 numerator만 들어 있습니다. 각 row의 <code>sum_score</code>로 나눈 뒤, 현재 Q block이 마지막 partial block이면 <code>store_safe</code>를 사용합니다.</div>
+ <div class="grid2">
+ ${lineCard('Source block: final output',`Otile.row_bin_op&lt;DivOp&gt;(sum_score)\nO += (tm + sm) * O_strides[2] + sn\nif last Q block is partial:\n  dst_tile_dims = (BD - sn, qL_rem - (tm + sm))\n  Otile.store_safe(O, stride, dst_tile_dims)\nelse:\n  Otile.store(O, stride)`, '저장 offset에도 <code>tm/sm/sn</code>이 들어가는 이유는 lane별/register fragment별로 맡은 output element 위치가 다르기 때문입니다.')}
+ <div class="miniCard"><h3>현재 store branch</h3><div class="formula">tid.x=${state.tidX}, NQ_aligned=${m.NQ_aligned}, qL_rem=${m.qL_rem}\nsm=${m.sm}, sn=${m.sn}\ndst_tile_dims = (${state.BD} - ${m.sn}, ${m.qL_rem} - (${m.tm} + ${m.sm}))\n→ ${lastQ?'store_safe path':'normal store path'}</div>${lastQ?'<div class="dangerBox note">마지막 Q block이 partial이면 OOB write 방지를 위해 store_safe가 필요합니다.</div>':'<div class="checkBox note">현재 Q block은 full output tile입니다.</div>'}</div>
+ </div>
+ <div class="grid2" style="margin-top:14px">
+  <div class="miniCard"><h3>Output block</h3>${outputGrid()}</div>
+  <div class="miniCard"><h3>Final relation</h3><div class="formula">O[row, d] = (Σ_k exp(score[row,k] - max[row]) * V[k,d]) / (Σ_k exp(score[row,k] - max[row]))\n\nThe kernel stores this for rows ${m.qStart}..${m.qEnd}, head ${state.tidY}, batch ${state.tidZ}.</div></div>
+ </div>`;
+}
+function outputGrid(){const m=metrics(); const rows=Math.min(state.BQ,16), cols=Math.min(state.BD,16); return `<div class="matrixWrap"><div class="matrixTitle"><span>O tile valid region</span><span>rows ${m.qStart}..${m.qEnd}</span></div>${matrix(rows,cols,(r,c)=>{const valid=(state.tidX*state.BQ+r)<state.qL; let cls=valid?'o':'masked'; if(r===state.rowSel)cls+=' active'; return cellHtml(cls,valid?'O':'×',`q=${state.tidX*state.BQ+r}, d=${c}`);},true)}</div>`;}
+function renderPseudo(){
+ const m=metrics();
+ qs('chap_pseudo').innerHTML=`<h2>12. 전체 pseudo-code로 재조립</h2>
+ <div class="chapterLead">앞의 조각들을 합치면 원본 <code>steel_attention.h</code>는 아래 흐름으로 읽으면 됩니다. 이 블록은 실제 코드를 복사한 것이 아니라 이해용 pseudo-code입니다.</div>
+ <div class="grid2">
+ <div class="miniCard"><h3>High-level pseudo-code</h3><div class="code">function attention_kernel(Q,K,V,O,params,..., tid):\n  // 1. choose logical block\n  B  = tid.z\n  Hq = tid.y\n  Hb = floor(Hq / gqa_factor)\n  Q_block = tid.x\n\n  // 2. move pointers\n  Qp = Q[B,Hq,Q_block*BQ,0]\n  Kp = K[B,Hb,0,0]\n  Vp = V[B,Hb,0,0]\n  Op = O[B,Hq,Q_block*BQ,0]\n\n  // 3. allocate threadgroup memory\n  Qs = Q_smem[BQ, BD+pad]\n  KV = KV_smem[max(K_layout,V_layout)]\n  Ks = KV; Vs = KV\n\n  // 4. load Q once\n  load Qp → Qs\n\n  // 5. initialize online softmax\n  max_score = -inf or sink\n  sum_score = 0 or 1\n  Otile = 0\n\n  // 6. loop over K/V blocks\n  for kb in visible K blocks:\n    load K[kb] → Ks\n    Stile = Qs @ Ks.T\n    Stile *= scale * log2(e)\n    apply length/causal/external masks\n\n    load V[kb] → Vs   // overwrites K memory\n\n    new_max = max(max_score, rowmax(Stile))\n    Stile = exp2(Stile - new_max)\n    factor = exp2(max_score - new_max)\n    sum_score = sum_score*factor + rowsum(Stile)\n    Otile = Otile*factor + Stile @ Vs\n    max_score = new_max\n\n  // 7. normalize and store\n  Otile = Otile / sum_score\n  store Otile → O</div></div>
+ <div class="miniCard"><h3>현재 설정으로 실행하면</h3><div class="formula">Q block ${state.tidX}/${m.NQ-1}: rows [${m.qStart}, ${m.qEnd+1})\nQ head ${state.tidY} maps to KV head ${m.kvHead}\nK/V blocks visible = 0..${Math.max(-1,m.kb_lim-1)} ${state.causal?'because causal pruning is active':'because full attention'}\ncurrent kb=${state.kb}: rows [${m.kStart}, ${m.kEnd+1})\nTQ=${fmt(m.TQ)}, TK=${fmt(m.TK)}, TD=${fmt(m.TD)}\nthreads per threadgroup=${state.warps*32}</div><div class="highlightBox note">이제 원본 코드를 볼 때는 “변수 선언”이 아니라 “어느 stage의 register/shared/global movement인가?”를 먼저 보세요.</div></div>
+ </div>
+ <div class="miniCard wide" style="margin-top:14px"><h3>코드 블록별 체크리스트</h3><table class="table"><thead><tr><th>Block</th><th>읽을 때 질문</th><th>핵심 변수</th></tr></thead><tbody>
+ <tr><td>constants</td><td>이 branch는 compile-time specialization인가?</td><td><code>align_Q/K</code>, <code>has_mask</code>, <code>do_causal</code></td></tr>
+ <tr><td>pointer</td><td>이 threadgroup은 output의 어느 tile을 쓰나?</td><td><code>tid</code>, <code>gqa_factor</code>, <code>strides</code></td></tr>
+ <tr><td>smem</td><td>global → shared → register 이동 경로는?</td><td><code>Q_smem</code>, <code>KV_smem</code>, <code>LD*_tgp</code></td></tr>
+ <tr><td>MMA</td><td>register tile shape은 실제 행렬의 어느 축인가?</td><td><code>TQ/TK/TD</code>, <code>Qtile/Ktile/Stile/Otile</code></td></tr>
+ <tr><td>loop</td><td>K/V block을 어디까지 보면 되나?</td><td><code>kb_lim</code>, <code>kb_min_causal</code></td></tr>
+ <tr><td>softmax</td><td>왜 old O와 old sum을 rescale하나?</td><td><code>max_score</code>, <code>sum_score</code>, <code>factor</code></td></tr>
+ <tr><td>store</td><td>마지막 partial Q block인가?</td><td><code>qL_rem</code>, <code>store_safe</code></td></tr>
+ </tbody></table></div>`;
+}
+function renderAll(){normalizeState(); syncLabels(); activateChapter(); renderOverview(); renderConstants(); renderSignature(); renderPointers(); renderSmem(); renderLoaders(); renderMma(); renderQK(); renderMask(); renderSoftmax(); renderValue(); renderStore(); renderPseudo();}
+function init(){initNav(); bindControls(); normalizeState(); renderAll();}
+init();
+</script>
+</body>
+</html>

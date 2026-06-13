@@ -8,7 +8,7 @@
 #define instantiate_attn(tname, dtype, bq, bk, bd, wm, wn, mname, mtype) \
   instantiate_kernel(                                                    \
       "steel_attention_" #tname "_bq" #bq "_bk" #bk "_bd" #bd            \
-      "_wm" #wm "_wn" #wn "_mask" #mname,                                \
+      "_wm" #wm "_wn" #wn "_mask" #mname,                               \
   attention, dtype, bq, bk, bd, wm, wn, mtype, float)
 
 #define instantiate_attn_shapes_helper(iname, itype, mname, mtype)  \

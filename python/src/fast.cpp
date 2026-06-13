@@ -297,6 +297,156 @@ void init_fast(nb::module_& parent_module) {
       )pbdoc");
 
   m.def(
+      "kivi_quantize_kv",
+      &mx::fast::kivi_quantize_kv,
+      "k"_a,
+      "v"_a,
+      nb::kw_only(),
+      "key_group_size"_a = 64,
+      "value_group_size"_a = 64,
+      "bits"_a = 4,
+      "stream"_a = nb::none(),
+      nb::sig(
+          "def kivi_quantize_kv(k: array, v: array, *, key_group_size: int = 64, value_group_size: int = 64, bits: int = 4, stream: Union[None, Stream, Device] = None) -> list[array]"),
+      R"pbdoc(
+        Quantize K/V tensors in a KIVI-style layout.
+
+        Keys are quantized per channel after moving the sequence dimension to
+        the innermost axis. Values are quantized per token over the value
+        dimension. Returns ``[kq, k_scales, k_biases, vq, v_scales, v_biases]``.
+      )pbdoc");
+
+  m.def(
+      "kivi_fused_dequantized_matmul",
+      &mx::fast::kivi_fused_dequantized_matmul,
+      "q"_a,
+      "kq"_a,
+      "k_scales"_a,
+      "k_biases"_a,
+      nb::kw_only(),
+      "scale"_a,
+      "key_group_size"_a = 64,
+      "bits"_a = 4,
+      "stream"_a = nb::none(),
+      nb::sig(
+          "def kivi_fused_dequantized_matmul(q: array, kq: array, k_scales: array, k_biases: array, *, scale: float, key_group_size: int = 64, bits: int = 4, stream: Union[None, Stream, Device] = None) -> array"),
+      R"pbdoc(
+        Computes scaled ``Q @ dequant(K)`` from KIVI-style quantized keys.
+
+        The key layout must be produced by :func:`kivi_quantize_kv`. This helper
+        uses MLX's quantized matmul path with ``transpose=False`` and handles
+        grouped-query attention by repeating K heads when needed.
+      )pbdoc");
+
+  m.def(
+      "kivi_scaled_dot_product_attention",
+      [](const mx::array& queries,
+         const mx::array& quantized_keys,
+         const mx::array& key_scales,
+         const mx::array& key_biases,
+         const mx::array& quantized_values,
+         const mx::array& value_scales,
+         const mx::array& value_biases,
+         const float scale,
+         const std::variant<std::monostate, std::string, mx::array>& mask,
+         const std::optional<mx::array>& sinks,
+         int key_group_size,
+         int value_group_size,
+         int bits,
+         mx::StreamOrDevice s) {
+        bool has_mask = !std::holds_alternative<std::monostate>(mask);
+        bool has_str_mask =
+            has_mask && std::holds_alternative<std::string>(mask);
+
+        if (has_mask) {
+          if (has_str_mask) {
+            auto mask_str = std::get<std::string>(mask);
+            if (mask_str != "causal") {
+              std::ostringstream msg;
+              msg << "[kivi_scaled_dot_product_attention] invalid mask option '"
+                  << mask_str << "'. Must be 'causal', or an array.";
+              throw std::invalid_argument(msg.str());
+            }
+            return mx::fast::kivi_scaled_dot_product_attention(
+                queries,
+                quantized_keys,
+                key_scales,
+                key_biases,
+                quantized_values,
+                value_scales,
+                value_biases,
+                scale,
+                mask_str,
+                std::nullopt,
+                sinks,
+                key_group_size,
+                value_group_size,
+                bits,
+                s);
+          } else {
+            auto mask_arr = std::get<mx::array>(mask);
+            return mx::fast::kivi_scaled_dot_product_attention(
+                queries,
+                quantized_keys,
+                key_scales,
+                key_biases,
+                quantized_values,
+                value_scales,
+                value_biases,
+                scale,
+                "",
+                mask_arr,
+                sinks,
+                key_group_size,
+                value_group_size,
+                bits,
+                s);
+          }
+        }
+
+        return mx::fast::kivi_scaled_dot_product_attention(
+            queries,
+            quantized_keys,
+            key_scales,
+            key_biases,
+            quantized_values,
+            value_scales,
+            value_biases,
+            scale,
+            "",
+            {},
+            sinks,
+            key_group_size,
+            value_group_size,
+            bits,
+            s);
+      },
+      "q"_a,
+      "kq"_a,
+      "k_scales"_a,
+      "k_biases"_a,
+      "vq"_a,
+      "v_scales"_a,
+      "v_biases"_a,
+      nb::kw_only(),
+      "scale"_a,
+      "mask"_a = nb::none(),
+      "sinks"_a = nb::none(),
+      "key_group_size"_a = 64,
+      "value_group_size"_a = 64,
+      "bits"_a = 4,
+      "stream"_a = nb::none(),
+      nb::sig(
+          "def kivi_scaled_dot_product_attention(q: array, kq: array, k_scales: array, k_biases: array, vq: array, v_scales: array, v_biases: array, *, scale: float, mask: Union[None, str, array] = None, sinks: Optional[array] = None, key_group_size: int = 64, value_group_size: int = 64, bits: int = 4, stream: Union[None, Stream, Device] = None) -> array"),
+      R"pbdoc(
+        SDPA over KIVI-style quantized K/V tensors.
+
+        This provides the public entry point and correctness fallback for fused
+        KIVI SDPA kernels. The K/V layout is produced by
+        :func:`kivi_quantize_kv`.
+      )pbdoc");
+
+  m.def(
       "metal_kernel",
       [](const std::string& name,
          const std::vector<std::string>& input_names,

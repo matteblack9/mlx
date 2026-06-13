@@ -861,6 +861,308 @@ array scaled_dot_product_attention(
   return fallback(std::move(inputs))[0];
 }
 
+std::vector<array> kivi_quantize_kv(
+    const array& keys,
+    const array& values,
+    int key_group_size,
+    int value_group_size,
+    int bits,
+    StreamOrDevice s) {
+  if (keys.ndim() != 4 || values.ndim() != 4) {
+    std::ostringstream msg;
+    msg << "[kivi_quantize_kv] keys and values must both be rank 4 but got "
+        << keys.shape() << " and " << values.shape() << ".";
+    throw std::invalid_argument(msg.str());
+  }
+  if (keys.shape(0) != values.shape(0) || keys.shape(1) != values.shape(1) ||
+      keys.shape(2) != values.shape(2)) {
+    std::ostringstream msg;
+    msg << "[kivi_quantize_kv] keys and values must match on [B, H, L]; got "
+        << keys.shape() << " and " << values.shape() << ".";
+    throw std::invalid_argument(msg.str());
+  }
+  if (key_group_size <= 0 || value_group_size <= 0) {
+    throw std::invalid_argument(
+        "[kivi_quantize_kv] group sizes must be positive.");
+  }
+
+  // KIVI quantizes keys per channel, i.e. along the sequence dimension for
+  // each [B, H, D] channel. Move sequence to the innermost dimension so the
+  // existing quantize primitive can be reused without changing its contract.
+  auto keys_by_channel = swapaxes(keys, -1, -2, s);
+  auto qk = quantize(keys_by_channel, key_group_size, bits, "affine", {}, s);
+
+  // Values are quantized per token along the value/head dimension.
+  auto qv = quantize(values, value_group_size, bits, "affine", {}, s);
+  return {
+      std::move(qk[0]),
+      std::move(qk[1]),
+      std::move(qk[2]),
+      std::move(qv[0]),
+      std::move(qv[1]),
+      std::move(qv[2])};
+}
+
+array kivi_fused_dequantized_matmul(
+    const array& queries,
+    const array& quantized_keys,
+    const array& key_scales,
+    const array& key_biases,
+    const float scale,
+    int key_group_size,
+    int bits,
+    StreamOrDevice s) {
+  if (queries.ndim() != 4 || quantized_keys.ndim() != 4) {
+    std::ostringstream msg;
+    msg << "[kivi_fused_dequantized_matmul] queries and quantized_keys must "
+        << "both be rank 4 but got " << queries.shape() << " and "
+        << quantized_keys.shape() << ".";
+    throw std::invalid_argument(msg.str());
+  }
+  if (queries.shape(0) != quantized_keys.shape(0) ||
+      queries.shape(3) != quantized_keys.shape(2)) {
+    std::ostringstream msg;
+    msg << "[kivi_fused_dequantized_matmul] expected query shape "
+        << "[B, Hq, Lq, D] and quantized key shape [B, Hkv, D, packed_L]; "
+        << "got " << queries.shape() << " and " << quantized_keys.shape()
+        << ".";
+    throw std::invalid_argument(msg.str());
+  }
+  if (key_group_size <= 0) {
+    throw std::invalid_argument(
+        "[kivi_fused_dequantized_matmul] key_group_size must be positive.");
+  }
+
+  int query_heads = queries.shape(1);
+  int kv_heads = quantized_keys.shape(1);
+  if (kv_heads <= 0 || query_heads % kv_heads != 0) {
+    std::ostringstream msg;
+    msg << "[kivi_fused_dequantized_matmul] query heads must be a multiple "
+        << "of kv heads; got Hq=" << query_heads << " and Hkv=" << kv_heads
+        << ".";
+    throw std::invalid_argument(msg.str());
+  }
+  if (quantized_keys.dtype() != uint32) {
+    std::ostringstream msg;
+    msg << "[kivi_fused_dequantized_matmul] quantized_keys must have dtype "
+        << "uint32 but got " << quantized_keys.dtype() << ".";
+    throw std::invalid_argument(msg.str());
+  }
+
+  int key_length = key_scales.shape(-1) * key_group_size;
+  if (quantized_keys.shape(-1) * 32 / bits != key_length) {
+    std::ostringstream msg;
+    msg << "[kivi_fused_dequantized_matmul] quantized_keys and key_scales "
+        << "do not agree on expanded key length; got " << quantized_keys.shape()
+        << " and " << key_scales.shape() << ".";
+    throw std::invalid_argument(msg.str());
+  }
+
+  auto stream = to_stream(s);
+  auto final_type = promote_types(queries.dtype(), key_scales.dtype());
+  if (!issubdtype(final_type, floating)) {
+    std::ostringstream msg;
+    msg << "[kivi_fused_dequantized_matmul] only floating output is supported "
+        << "but got " << final_type << ".";
+    throw std::invalid_argument(msg.str());
+  }
+
+  auto fallback = [scale, key_group_size, bits, stream](
+                      const std::vector<array>& inputs) {
+    auto q = inputs[0];
+    auto k = dequantize(
+        inputs[1],
+        inputs[2],
+        inputs[3],
+        key_group_size,
+        bits,
+        "affine",
+        {},
+        q.dtype(),
+        stream);
+    if (q.shape(1) != k.shape(1)) {
+      k = repeat(k, q.shape(1) / k.shape(1), 1, stream);
+    }
+    auto scores = matmul(q, k, stream);
+    return std::vector<array>{
+        multiply(scores, array(scale, scores.dtype()), stream)};
+  };
+
+  std::vector<array> inputs = {
+      astype(queries, final_type, stream),
+      quantized_keys,
+      astype(key_scales, final_type, stream),
+      astype(key_biases, final_type, stream)};
+  Shape out_shape{
+      queries.shape(0), queries.shape(1), queries.shape(2), key_length};
+  return array(
+      std::move(out_shape),
+      final_type,
+      std::make_shared<KiviFusedDequantizedMatmul>(
+          stream, fallback, scale, key_group_size, bits),
+      std::move(inputs));
+}
+
+array kivi_scaled_dot_product_attention(
+    const array& queries,
+    const array& quantized_keys,
+    const array& key_scales,
+    const array& key_biases,
+    const array& quantized_values,
+    const array& value_scales,
+    const array& value_biases,
+    const float scale,
+    const std::string& mask_mode,
+    std::optional<array> mask_arr,
+    const std::optional<array>& sinks,
+    int key_group_size,
+    int value_group_size,
+    int bits,
+    StreamOrDevice s) {
+  if (queries.ndim() != 4) {
+    std::ostringstream msg;
+    msg << "[kivi_scaled_dot_product_attention] queries must be rank 4 but got "
+        << queries.shape() << ".";
+    throw std::invalid_argument(msg.str());
+  }
+  if (key_group_size <= 0 || value_group_size <= 0) {
+    throw std::invalid_argument(
+        "[kivi_scaled_dot_product_attention] group sizes must be positive.");
+  }
+  if (mask_mode != "" && mask_mode != "causal" && mask_mode != "array") {
+    std::ostringstream msg;
+    msg << "[kivi_scaled_dot_product_attention] Invalid mask_mode "
+        << mask_mode << ".";
+    throw std::invalid_argument(msg.str());
+  }
+  if (mask_arr) {
+    throw std::invalid_argument(
+        "[kivi_scaled_dot_product_attention] array masks are not wired to the "
+        "KIVI Metal skeleton yet.");
+  }
+  if (sinks) {
+    throw std::invalid_argument(
+        "[kivi_scaled_dot_product_attention] attention sinks are not wired to "
+        "the KIVI Metal skeleton yet.");
+  }
+  if (quantized_keys.dtype() != uint32 || quantized_values.dtype() != uint32) {
+    std::ostringstream msg;
+    msg << "[kivi_scaled_dot_product_attention] quantized K/V must have dtype "
+        << "uint32 but got " << quantized_keys.dtype() << " and "
+        << quantized_values.dtype() << ".";
+    throw std::invalid_argument(msg.str());
+  }
+  if (queries.shape(0) != quantized_keys.shape(0) ||
+      queries.shape(0) != quantized_values.shape(0) ||
+      quantized_keys.shape(1) != quantized_values.shape(1) ||
+      queries.shape(3) != quantized_keys.shape(2)) {
+    std::ostringstream msg;
+    msg << "[kivi_scaled_dot_product_attention] expected q [B,Hq,Lq,D], "
+        << "kq [B,Hkv,D,packed_L], vq [B,Hkv,L,packed_D]; got "
+        << queries.shape() << ", " << quantized_keys.shape() << ", "
+        << quantized_values.shape() << ".";
+    throw std::invalid_argument(msg.str());
+  }
+  if (queries.shape(1) % quantized_keys.shape(1) != 0) {
+    std::ostringstream msg;
+    msg << "[kivi_scaled_dot_product_attention] query heads must be a "
+        << "multiple of kv heads; got Hq=" << queries.shape(1)
+        << " and Hkv=" << quantized_keys.shape(1) << ".";
+    throw std::invalid_argument(msg.str());
+  }
+
+  int key_length = key_scales.shape(-1) * key_group_size;
+  int value_dim = value_scales.shape(-1) * value_group_size;
+  if (value_dim > 256) {
+    throw std::invalid_argument(
+        "[kivi_scaled_dot_product_attention] the initial KIVI Metal skeleton "
+        "supports value_dim <= 256.");
+  }
+  if (quantized_keys.shape(-1) * 32 / bits != key_length ||
+      quantized_values.shape(-1) * 32 / bits != value_dim ||
+      quantized_values.shape(2) != key_length) {
+    std::ostringstream msg;
+    msg << "[kivi_scaled_dot_product_attention] quantized K/V shapes do not "
+        << "match scale metadata; got kq=" << quantized_keys.shape()
+        << ", k_scales=" << key_scales.shape()
+        << ", vq=" << quantized_values.shape()
+        << ", v_scales=" << value_scales.shape() << ".";
+    throw std::invalid_argument(msg.str());
+  }
+
+  auto stream = to_stream(s);
+  auto final_type = result_type(queries, key_scales, value_scales);
+  if (!issubdtype(final_type, floating)) {
+    std::ostringstream msg;
+    msg << "[kivi_scaled_dot_product_attention] only floating output is "
+        << "supported but got " << final_type << ".";
+    throw std::invalid_argument(msg.str());
+  }
+  bool do_causal = mask_mode == "causal";
+
+  auto fallback = [scale,
+                   do_causal,
+                   key_group_size,
+                   value_group_size,
+                   bits,
+                   stream](const std::vector<array>& inputs) {
+    auto q = inputs[0];
+    auto k = dequantize(
+        inputs[1],
+        inputs[2],
+        inputs[3],
+        key_group_size,
+        bits,
+        "affine",
+        {},
+        q.dtype(),
+        stream);
+    k = swapaxes(k, -1, -2, stream);
+    auto v = dequantize(
+        inputs[4],
+        inputs[5],
+        inputs[6],
+        value_group_size,
+        bits,
+        "affine",
+        {},
+        q.dtype(),
+        stream);
+    return std::vector<array>{scaled_dot_product_attention(
+        q,
+        k,
+        v,
+        scale,
+        do_causal ? "causal" : "",
+        std::nullopt,
+        std::nullopt,
+        stream)};
+  };
+
+  std::vector<array> inputs = {
+      astype(queries, final_type, stream),
+      quantized_keys,
+      astype(key_scales, final_type, stream),
+      astype(key_biases, final_type, stream),
+      quantized_values,
+      astype(value_scales, final_type, stream),
+      astype(value_biases, final_type, stream)};
+  Shape out_shape{
+      queries.shape(0), queries.shape(1), queries.shape(2), value_dim};
+  return array(
+      std::move(out_shape),
+      final_type,
+      std::make_shared<KiviScaledDotProductAttention>(
+          stream,
+          fallback,
+          scale,
+          do_causal,
+          key_group_size,
+          value_group_size,
+          bits),
+      std::move(inputs));
+}
+
 std::vector<array> ScaledDotProductAttention::vjp(
     const std::vector<array>& primals,
     const std::vector<array>& cotangents,
@@ -913,6 +1215,23 @@ bool ScaledDotProductAttention::is_equivalent(const Primitive& other) const {
   return scale_ == a_other.scale_ && do_causal_ == a_other.do_causal_ &&
       has_sinks_ == a_other.has_sinks_ &&
       output_logsumexp_ == a_other.output_logsumexp_;
+}
+
+bool KiviFusedDequantizedMatmul::is_equivalent(
+    const Primitive& other) const {
+  const KiviFusedDequantizedMatmul& a_other =
+      static_cast<const KiviFusedDequantizedMatmul&>(other);
+  return scale_ == a_other.scale_ &&
+      key_group_size_ == a_other.key_group_size_ && bits_ == a_other.bits_;
+}
+
+bool KiviScaledDotProductAttention::is_equivalent(
+    const Primitive& other) const {
+  const KiviScaledDotProductAttention& a_other =
+      static_cast<const KiviScaledDotProductAttention&>(other);
+  return scale_ == a_other.scale_ && do_causal_ == a_other.do_causal_ &&
+      key_group_size_ == a_other.key_group_size_ &&
+      value_group_size_ == a_other.value_group_size_ && bits_ == a_other.bits_;
 }
 
 bool ScaledDotProductAttentionVJP::is_equivalent(const Primitive& other) const {

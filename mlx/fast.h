@@ -54,6 +54,52 @@ MLX_API array scaled_dot_product_attention(
     const std::optional<array>& sinks = {},
     StreamOrDevice s = {});
 
+/**
+ * Quantize KV cache in the layout expected by kivi_scaled_dot_product_attention.
+ *
+ * KIVI-style layout:
+ * - keys are quantized per channel across the sequence dimension. The returned
+ *   quantized keys have shape [B, H, D, packed_L].
+ * - values are quantized per token across the value dimension. The returned
+ *   quantized values have shape [B, H, L, packed_D].
+ */
+MLX_API std::vector<array> kivi_quantize_kv(
+    const array& keys,
+    const array& values,
+    int key_group_size,
+    int value_group_size,
+    int bits,
+    StreamOrDevice s = {});
+
+/** Computes scaled Q @ dequant(K) from KIVI-style quantized keys. */
+MLX_API array kivi_fused_dequantized_matmul(
+    const array& queries,
+    const array& quantized_keys,
+    const array& key_scales,
+    const array& key_biases,
+    const float scale,
+    int key_group_size = 64,
+    int bits = 4,
+    StreamOrDevice s = {});
+
+/** Computes SDPA from KIVI-style quantized K/V caches. */
+MLX_API array kivi_scaled_dot_product_attention(
+    const array& queries,
+    const array& quantized_keys,
+    const array& key_scales,
+    const array& key_biases,
+    const array& quantized_values,
+    const array& value_scales,
+    const array& value_biases,
+    const float scale,
+    const std::string& mask_mode = "",
+    std::optional<array> mask_arr = {},
+    const std::optional<array>& sinks = {},
+    int key_group_size = 64,
+    int value_group_size = 64,
+    int bits = 4,
+    StreamOrDevice s = {});
+
 using TemplateArg = std::variant<int, bool, Dtype>;
 using ScalarArg = std::variant<bool, int, float>;
 
